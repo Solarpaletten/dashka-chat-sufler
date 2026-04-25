@@ -22,20 +22,20 @@
  */
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { usePane } from "@/features/translator/usePane";
-import { useTheme } from "@/features/translator/useTheme";
-import { useTTS } from "@/features/translator/useTTS";
-import { useFlow } from "@/features/translator/useFlow";
-import Pane from "@/features/translator/Pane";
-import FlowPanel from "@/features/translator/FlowPanel";
 import CleanBar from "@/features/translator/CleanBar";
+import FlowPanel from "@/features/translator/FlowPanel";
+import Pane from "@/features/translator/Pane";
+import { LEFT_PANE, PARTNER_LANG, RIGHT_PANE } from "@/features/translator/paneConfigs";
 import {
   type LangCode,
   type TtsVoice,
   LANG_META,
 } from "@/features/translator/types";
-import { LEFT_PANE, RIGHT_PANE, PARTNER_LANG } from "@/features/translator/paneConfigs";
+import { useFlow } from "@/features/translator/useFlow";
+import { usePane } from "@/features/translator/usePane";
+import { useTheme } from "@/features/translator/useTheme";
+import { useTTS } from "@/features/translator/useTTS";
+import { useCallback, useEffect, useState } from "react";
 
 export default function Home() {
   const { theme, toggle: toggleTheme, mounted } = useTheme();

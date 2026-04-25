@@ -29,6 +29,6 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-  ],
+, "../dashka-v231-patch/files/features/translator/Pane.tsx", "../dashka-v231-patch/files/features/translator/CleanBar.tsx", "../dashka-v24-patch/files/features/translator/CleanBar.tsx"  ],
   "exclude": ["node_modules"]
 }
