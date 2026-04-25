@@ -1,14 +1,16 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════════╗
  * ║ 📄  app/globals.css                                                ║
- * ║ 🏷️  version:  2.4.0                                                ║
- * ║ 📅  changed:  2026-04-23                                           ║
+ * ║ 🏷️  version:  2.5.3                                                ║
+ * ║ 📅  changed:  2026-04-25                                           ║
  * ║ 👥  author:   Solar Team · Leanid + Claude                         ║
  * ║                                                                    ║
  * ║ 🔄 CHANGELOG                                                       ║
+ * ║   v2.5.3 — Wide layout for big screens                             ║
+ * ║          — page-inner-dual: 82rem → 110rem (MacBook 15"/16")       ║
+ * ║          — io-input/io-output: max-height 400px → 700px            ║
+ * ║          — better text breathing room for long content (BBC test)  ║
  * ║   v2.4   — added .clean-bar (raw + clean + speak/copy)             ║
- * ║          — added .flow-sugg.is-new + .flow-sugg-new badge          ║
- * ║          — added .flow-panel-subtitle                              ║
  * ║   v2.3.1 — .btn-mic-flow-locked (mic mutex)                        ║
  * ║   v2.3   — .flow-panel + .flow-toggle-btn + .flow-sugg             ║
  * ║   v2.2   — unified .io-btn + .share-toast                          ║
@@ -97,7 +99,7 @@ body {
 }
 .page-inner-dual {
   width: 100%;
-  max-width: 82rem;                /* wider for dual */
+  max-width: 110rem;               /* v2.5.3: wider for 15"/16" MacBook Pro */
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -347,7 +349,7 @@ body {
   font-size: 0.95rem;
   line-height: 1.5;
   min-height: 5.5rem;
-  max-height: 400px;
+  max-height: 700px;               /* v2.5.3: wider screens fit longer text */
   resize: none;
   font-family: inherit;
 }
@@ -364,7 +366,7 @@ body {
   line-height: 1.5;
   font-size: 0.95rem;
   min-height: 4rem;
-  max-height: 400px;
+  max-height: 700px;               /* v2.5.3: wider screens fit longer text */
   overflow-y: auto;
 }
 .io-output-empty {
