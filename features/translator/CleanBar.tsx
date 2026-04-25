@@ -22,7 +22,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import type { LangCode, TtsVoice } from "./translat/types";
+import type { LangCode, TtsVoice } from "./types";
 
 interface CleanBarProps {
   raw: string;                   // what Grok heard (mixed)
@@ -56,7 +56,7 @@ export default function CleanBar({
 
   const handleCopy = useCallback(() => {
     if (!clean || typeof navigator === "undefined") return;
-    navigator.clipboard?.writeText(clean).catch(() => {});
+    navigator.clipboard?.writeText(clean).catch(() => { });
     setCopyFeedback(true);
     window.setTimeout(() => setCopyFeedback(false), 1200);
   }, [clean]);

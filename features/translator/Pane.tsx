@@ -1,10 +1,25 @@
+/**
+ * ╔═══════════════════════════════════════════════════════════════════╗
+ * ║ 📄  features/translator/Pane.tsx                                   ║
+ * ║ 🏷️  version:  2.3.1                                                ║
+ * ║ 📅  changed:  2026-04-23                                           ║
+ * ║ 👥  author:   Solar Team · Leanid + Claude                         ║
+ * ║                                                                    ║
+ * ║ 🔄 CHANGELOG                                                       ║
+ * ║   v2.3.1 — added flowActive prop (mic mutex with Sufler)           ║
+ * ║          — when Flow is recording, this pane's mic is disabled     ║
+ * ║          — visual hint: dimmed mic icon + tooltip                  ║
+ * ║   v2.2   — Share button + copy feedback                             ║
+ * ║   v2.1   — initial Pane                                             ║
+ * ╚═══════════════════════════════════════════════════════════════════╝
+ */
 // features/translator/Pane.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePane } from "./usePane";
 import type { LangCode, TtsVoice } from "./types";
 import { LANG_META, TTS_VOICES } from "./types";
-import { usePane } from "./usePane";
 
 interface PaneProps {
   pane: ReturnType<typeof usePane>;
@@ -13,6 +28,7 @@ interface PaneProps {
   isPlaying: boolean;
   onShareRequest: (text: string, lang: LangCode, voice: TtsVoice) => Promise<void>;
   isSharing: boolean;
+  flowActive?: boolean;   // v2.3.1: true when Sufler is recording (mic mutex)
 }
 
 export default function Pane({
@@ -22,6 +38,7 @@ export default function Pane({
   isPlaying,
   onShareRequest,
   isSharing,
+  flowActive = false,
 }: PaneProps) {
   const fromMeta = LANG_META[pane.config.from];
   const toMeta = LANG_META[pane.config.to];
@@ -37,7 +54,7 @@ export default function Pane({
 
   const copy = () => {
     if (pane.translatedText && typeof navigator !== "undefined") {
-      navigator.clipboard?.writeText(pane.translatedText).catch(() => {});
+      navigator.clipboard?.writeText(pane.translatedText).catch(() => { });
       setCopyFeedback(true);
       window.setTimeout(() => setCopyFeedback(false), 1200);
     }
@@ -124,9 +141,22 @@ export default function Pane({
         <button
           type="button"
           onClick={pane.toggleMic}
-          disabled={pane.isProcessing}
-          className={`btn-mic ${pane.isRecording ? "btn-mic-recording" : ""}`}
-          aria-label={pane.isRecording ? "Остановить запись" : "Начать запись"}
+          disabled={pane.isProcessing || flowActive}
+          className={`btn-mic ${pane.isRecording ? "btn-mic-recording" : ""} ${flowActive ? "btn-mic-flow-locked" : ""}`}
+          aria-label={
+            flowActive
+              ? "Микрофон используется Sufler — выключите Flow для записи в эту панель"
+              : pane.isRecording
+                ? "Остановить запись"
+                : "Начать запись"
+          }
+          title={
+            flowActive
+              ? "Микрофон занят Sufler"
+              : pane.isRecording
+                ? "Остановить запись"
+                : "Начать запись"
+          }
         >
           {pane.isRecording ? "⏹" : "🎤"}
           {pane.isRecording && <span className="mic-pulse" />}
