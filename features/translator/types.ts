@@ -1,14 +1,16 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════════╗
  * ║ 📄  features/translator/types.ts                                   ║
- * ║ 🏷️  version:  2.3.0                                                ║
+ * ║ 🏷️  version:  2.4.0                                                ║
  * ║ 📅  changed:  2026-04-23                                           ║
  * ║ 👥  author:   Solar Team · Leanid + Claude                         ║
  * ║                                                                    ║
  * ║ 🔄 CHANGELOG                                                       ║
- * ║   v2.3 — + FlowSuggestion, SttEngine types for Dashka Flow         ║
- * ║   v2.2 — (identical content, bumped for version alignment)         ║
- * ║   v2.1 — Multi-language template (LANG_META × 10 languages)        ║
+ * ║   v2.4   — + isNew flag on FlowSuggestion (for ● new indicator)    ║
+ * ║          — Sufler now exposes cleanText (Smart Direction = EN)     ║
+ * ║   v2.3.1 — bidirectional FlowSuggestion (translation field)        ║
+ * ║   v2.3   — initial Sufler types                                    ║
+ * ║   v2.1   — Multi-language template (LANG_META × 10)                ║
  * ╚═══════════════════════════════════════════════════════════════════╝
  */
 // features/translator/types.ts
@@ -129,15 +131,16 @@ export interface TranslateResponse {
   message?: string;
 }
 
-/* ─── Dashka Flow v2.3 ────────────────────────────────────────────── */
-export type SttEngine = "web-speech" | "grok";
+/* ─── Dashka Sufler v2.4 ──────────────────────────────────────────── */
 
 export interface FlowSuggestion {
-  original: string;                             // "переговорить"
-  sourceLanguage: "ru" | "en" | "unknown";
-  german: string;                               // translation to target lang
-  context?: string;                             // "business meeting", etc.
+  original: string;                    // word as user said it
+  sourceLanguage: "ru" | "en";         // which language it was in
+  translation: string;                 // translation to the OTHER language
+  context?: string;                    // e.g. "business meeting"
+  isNew?: boolean;                     // v2.4: true on first appearance — fades after 6s
 }
+
 /* ─────────────────────────────────────────────────────────────────── */
 
 /* --- SpeechRecognition ambient types --- */

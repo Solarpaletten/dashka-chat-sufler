@@ -1,18 +1,23 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════════╗
  * ║ 📄  app/page.tsx                                                   ║
- * ║ 🏷️  version:  2.3.0                                                ║
+ * ║ 🏷️  version:  2.4.0                                                ║
  * ║ 📅  changed:  2026-04-23                                           ║
  * ║ 👥  author:   Solar Team · Leanid + Claude                         ║
  * ║                                                                    ║
+ * ║ 🎯  v2.4 — 4-LAYER SUFLER MODEL                                    ║
+ * ║     RAW    → FLOW (optional)  → CLEAN (main)  → SPEAK              ║
+ * ║                                                                    ║
  * ║ 🔄 CHANGELOG                                                       ║
- * ║   v2.3 — added 🎧 Flow toggle + <FlowPanel/>                       ║
- * ║        — integrated useFlow hook (hybrid STT: Web Speech / Grok)   ║
- * ║        — Flow suggestion 🔊 plays via existing useTTS              ║
- * ║        — footer: "Dashka Flow" tagline when enabled                ║
- * ║   v2.2 — added handleShare() via Web Share API L2                 ║
- * ║        — split blobCache/urlCache in useTTS                        ║
- * ║   v2.1 — initial dual-pane architecture with PARTNER_LANG config  ║
+ * ║   v2.4   — added <CleanBar/> as main layer (visible whenever       ║
+ * ║            Sufler has heard anything)                              ║
+ * ║          — Speak button on CleanBar uses existing useTTS           ║
+ * ║          — Flow toggle = learning layer (default OFF)              ║
+ * ║          — separate isPlaying state for clean-bar TTS              ║
+ * ║   v2.3.1 — Grok STT only, mic mutex, bidirectional EN↔RU           ║
+ * ║   v2.3   — initial Sufler                                          ║
+ * ║   v2.2   — Web Share API                                           ║
+ * ║   v2.1   — initial dual-pane                                       ║
  * ╚═══════════════════════════════════════════════════════════════════╝
  */
 "use client";
@@ -24,6 +29,7 @@ import { useTTS } from "@/features/translator/useTTS";
 import { useFlow } from "@/features/translator/useFlow";
 import Pane from "@/features/translator/Pane";
 import FlowPanel from "@/features/translator/FlowPanel";
+import CleanBar from "@/features/translator/CleanBar";
 import {
   type LangCode,
   type TtsVoice,
@@ -35,7 +41,7 @@ export default function Home() {
   const { theme, toggle: toggleTheme, mounted } = useTheme();
   const { play, stop, getBlob, isPlaying, error: ttsError } = useTTS();
   const [autoTTS, setAutoTTS] = useState(true);
-  const [activePlayingPane, setActivePlayingPane] = useState<"left" | "right" | null>(null);
+  const [activePlayingPane, setActivePlayingPane] = useState<"left" | "right" | "clean" | null>(null);
   const [sharingPane, setSharingPane] = useState<"left" | "right" | null>(null);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [online, setOnline] = useState<boolean | null>(null);
@@ -51,8 +57,8 @@ export default function Home() {
     window.localStorage.setItem("dashka-auto-tts", autoTTS ? "1" : "0");
   }, [autoTTS]);
 
-  /* ─── Dashka Flow v2.3 ─────────────────────────────────────────── */
-  const flow = useFlow({ targetLanguage: PARTNER_LANG });
+  /* ─── Dashka Sufler v2.3.1 ─────────────────────────────────────── */
+  const flow = useFlow();
   // Restore Flow toggle pref
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -197,7 +203,7 @@ export default function Home() {
               <span>Dashka</span>
             </h1>
             <p className="app-subtitle">
-              Dual · {partnerMeta.nativeName} ↔ Русский · v2.3
+              Dual · {partnerMeta.nativeName} ↔ Русский · v2.4 Sufler
             </p>
           </div>
           <div className="app-actions">
@@ -248,6 +254,7 @@ export default function Home() {
             isPlaying={isPlaying && activePlayingPane === "left"}
             onShareRequest={(text, lang, voice) => handleShare("left", text, lang, voice)}
             isSharing={sharingPane === "left"}
+            flowActive={flow.recording}
           />
           <Pane
             pane={rightPane}
@@ -256,16 +263,30 @@ export default function Home() {
             isPlaying={isPlaying && activePlayingPane === "right"}
             onShareRequest={(text, lang, voice) => handleShare("right", text, lang, voice)}
             isSharing={sharingPane === "right"}
+            flowActive={flow.recording}
           />
         </div>
+
+        {/* v2.4 — CLEAN layer (always visible while Sufler has heard something) */}
+        <CleanBar
+          raw={flow.transcript}
+          clean={flow.cleanText}
+          recording={flow.recording}
+          voiceEN={leftPane.voice}
+          isPlaying={isPlaying && activePlayingPane === "clean"}
+          onSpeak={(text, lang, voice) => {
+            setActivePlayingPane("clean");
+            void play({ text, language: lang, voice });
+          }}
+          onStop={onStop}
+        />
 
         {flow.enabled && (
           <FlowPanel
             suggestions={flow.suggestions}
-            engine={flow.engine}
             recording={flow.recording}
-            targetLanguage={PARTNER_LANG}
-            voice={leftPane.voice}
+            voiceEN={leftPane.voice}
+            voiceRU={rightPane.voice}
             error={flow.error}
             onPlaySuggestion={(text, lang, voice) => {
               setActivePlayingPane(null);
@@ -276,7 +297,7 @@ export default function Home() {
         )}
 
         <footer className="app-footer">
-          Dashka · v2.3 Dual {flow.enabled ? "Flow" : ""} · {partnerMeta.flag} {partnerMeta.nativeName} · Grok TTS · Solar Team 🚀
+          Dashka · v2.4 Sufler · {partnerMeta.flag} {partnerMeta.nativeName} · Grok TTS+STT · Solar Team 🚀
         </footer>
       </div>
     </div>

@@ -1,15 +1,18 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════════╗
  * ║ 📄  app/globals.css                                                ║
- * ║ 🏷️  version:  2.3.0                                                ║
+ * ║ 🏷️  version:  2.4.0                                                ║
  * ║ 📅  changed:  2026-04-23                                           ║
  * ║ 👥  author:   Solar Team · Leanid + Claude                         ║
  * ║                                                                    ║
  * ║ 🔄 CHANGELOG                                                       ║
- * ║   v2.3 — + .flow-panel + .flow-toggle-btn + .flow-sugg styles      ║
- * ║        — + amber accent color for Flow (--flow-*)                  ║
- * ║   v2.2 — unified .io-btn + .share-toast + toastIn animation        ║
- * ║   v2.1 — initial dual-pane                                         ║
+ * ║   v2.4   — added .clean-bar (raw + clean + speak/copy)             ║
+ * ║          — added .flow-sugg.is-new + .flow-sugg-new badge          ║
+ * ║          — added .flow-panel-subtitle                              ║
+ * ║   v2.3.1 — .btn-mic-flow-locked (mic mutex)                        ║
+ * ║   v2.3   — .flow-panel + .flow-toggle-btn + .flow-sugg             ║
+ * ║   v2.2   — unified .io-btn + .share-toast                          ║
+ * ║   v2.1   — initial dual-pane                                       ║
  * ╚═══════════════════════════════════════════════════════════════════╝
  */
 @import "tailwindcss";
@@ -686,4 +689,214 @@ body {
   .flow-sugg-from {
     min-width: 100px;
   }
+}
+
+/* v2.3.1 — Mic mutex with Sufler */
+.btn-mic-flow-locked {
+  opacity: 0.4;
+  cursor: not-allowed;
+  position: relative;
+}
+.btn-mic-flow-locked::after {
+  content: "🎧";
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  font-size: 10px;
+  background: var(--flow-accent);
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--flow-card-bg);
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/*  Dashka Sufler v2.4 — CleanBar + ● new                              */
+/* ══════════════════════════════════════════════════════════════════ */
+
+/* CleanBar (main layer: RAW + CLEAN + SPEAK/COPY) */
+.clean-bar {
+  margin-top: 20px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 0.2s ease;
+}
+
+[data-theme="light"] .clean-bar {
+  background: var(--bg-elev);
+  border-color: var(--border);
+}
+
+.clean-bar-row {
+  display: grid;
+  grid-template-columns: 24px auto 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 6px 0;
+}
+
+.clean-bar-row.clean-bar-clean {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 4px;
+}
+
+.clean-bar-icon {
+  font-size: 16px;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+
+.clean-bar-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--fg-muted);
+  font-weight: 500;
+  white-space: nowrap;
+  padding-top: 3px;
+}
+
+.clean-bar-text {
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 0;
+  color: var(--fg);
+  word-wrap: break-word;
+  min-height: 22px;
+  /* Smooth update — no jumping */
+  transition: opacity 0.15s ease;
+}
+
+.clean-bar-text-raw {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.clean-bar-text-clean {
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.clean-bar-placeholder {
+  color: var(--fg-dim);
+  font-style: italic;
+  font-size: 13px;
+}
+
+.clean-bar-actions {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+
+.clean-bar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  color: var(--fg);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+}
+
+.clean-bar-btn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-elev);
+}
+
+.clean-bar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.clean-bar-btn.is-playing {
+  background: var(--play);
+  border-color: var(--play);
+  color: white;
+}
+
+.clean-bar-btn.is-success {
+  background: var(--online);
+  border-color: var(--online);
+  color: white;
+}
+
+@media (max-width: 640px) {
+  .clean-bar-row {
+    grid-template-columns: 20px 1fr;
+    gap: 8px;
+  }
+  .clean-bar-label {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .clean-bar-text {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .clean-bar-actions {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    justify-content: flex-end;
+    margin-top: 4px;
+  }
+  .clean-bar-text-clean {
+    font-size: 16px;
+  }
+}
+
+/* Flow panel: subtitle */
+.flow-panel-subtitle {
+  font-size: 11px;
+  color: var(--flow-fg);
+  opacity: 0.6;
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+/* ● new badge */
+.flow-sugg-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--flow-accent);
+  font-weight: 500;
+  padding: 2px 8px;
+  background: rgba(245, 158, 11, 0.15);
+  border-radius: 999px;
+  flex-shrink: 0;
+  animation: flowNewFadeIn 0.3s ease-out;
+}
+
+@keyframes flowNewFadeIn {
+  from { opacity: 0; transform: scale(0.8); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.flow-sugg.is-new {
+  border-color: var(--flow-accent);
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.15);
+  animation: flowNewHighlight 0.3s ease-out;
+}
+
+@keyframes flowNewHighlight {
+  from { transform: translateY(-2px); opacity: 0.6; }
+  to   { transform: translateY(0); opacity: 1; }
 }
