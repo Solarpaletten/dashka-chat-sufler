@@ -1,69 +1,44 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════════╗
  * ║ 📄  app/api/stt/route.ts                                           ║
- * ║ 🏷️  version:  2.4.2                                                ║
+ * ║ 🏷️  version:  2.5.0                                                ║
  * ║ 📅  changed:  2026-04-25                                           ║
- * ║ 👥  author:   Solar Team · Leanid + Claude                         ║
+ * ║ 👥  author:   Solar Team · Leanid + Claude + Solana                ║
  * ║                                                                    ║
- * ║ 🎯  PURPOSE — Grok STT proxy with smart audio format handling      ║
+ * ║ 🎯  PURPOSE — Speech-to-Text via OpenAI Whisper                    ║
+ * ║                                                                    ║
+ * ║     Why Whisper instead of Grok:                                   ║
+ * ║     - Grok rejects browser webm/opus (400: corrupt audio format)   ║
+ * ║     - Even after webm→ogg rename, Grok refuses                     ║
+ * ║     - Whisper natively accepts webm without conversion             ║
+ * ║     - Better multilingual support (RU+EN mix)                      ║
+ * ║                                                                    ║
+ * ║ 💰 Cost: $0.006/min (vs Grok $0.10/hr = $0.00167/min)              ║
+ * ║          ~10min meeting = $0.06 (negligible)                       ║
  * ║                                                                    ║
  * ║ 🔄 CHANGELOG                                                       ║
- * ║   v2.4.2 — webm → ogg rename (Grok rejects webm container,         ║
- * ║            but accepts opus codec inside ogg)                      ║
- * ║          — explicit content-type forwarding                        ║
- * ║          — better error logging with full Grok response            ║
- * ║   v2.3.1 — current Grok API: format=true + language                ║
- * ║   v2.3   — initial Grok STT integration                            ║
+ * ║   v2.5.0 — switched from Grok to OpenAI Whisper                    ║
+ * ║          — accepts webm directly, no repackaging needed            ║
+ * ║          — kept XAI_API_KEY for TTS (Leo voice still works)        ║
+ * ║   v2.4.2 — Grok webm→ogg rename (FAILED — Grok rejects ogg too)    ║
+ * ║   v2.3.1 — Grok STT integration                                    ║
  * ╚═══════════════════════════════════════════════════════════════════╝
  */
 import { NextRequest, NextResponse } from "next/server";
 
-/**
- * Map browser audio mime types to filenames Grok will accept.
- * Grok rejects "audio/webm" but accepts the same opus payload as "audio.ogg".
- * Both webm and ogg are containers around opus codec — Grok parses ogg cleanly.
- */
-function pickGrokFilename(file: File): string {
-  const mime = (file.type || "").toLowerCase();
-
-  // mp4 / m4a / aac → keep as-is
-  if (mime.includes("mp4") || mime.includes("m4a") || mime.includes("aac")) {
-    return file.name?.endsWith(".m4a") ? file.name : "audio.m4a";
-  }
-  // mp3
-  if (mime.includes("mpeg") || mime.includes("mp3")) {
-    return file.name?.endsWith(".mp3") ? file.name : "audio.mp3";
-  }
-  // wav
-  if (mime.includes("wav") || mime.includes("wave")) {
-    return file.name?.endsWith(".wav") ? file.name : "audio.wav";
-  }
-  // ogg native
-  if (mime.includes("ogg")) {
-    return file.name?.endsWith(".ogg") ? file.name : "audio.ogg";
-  }
-  // webm with opus codec (Chrome default) — rename to ogg
-  // The opus packets inside are valid ogg/opus
-  if (mime.includes("webm") || mime.includes("opus")) {
-    return "audio.ogg";
-  }
-  // Fallback — try ogg
-  return "audio.ogg";
-}
-
 export async function POST(req: NextRequest) {
   try {
-    const apiKey = process.env.XAI_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { status: "error", message: "XAI_API_KEY is missing" },
+        { status: "error", message: "OPENAI_API_KEY is missing" },
         { status: 500 }
       );
     }
 
     const formData = await req.formData();
     const file = formData.get("file");
-    const language = (formData.get("language")?.toString() ?? "en").trim();
+    const language = (formData.get("language")?.toString() ?? "").trim();
 
     if (!(file instanceof File)) {
       return NextResponse.json(
@@ -79,68 +54,70 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Skip silent/empty chunks (Grok rejects them with 400 anyway)
+    // Skip silent/empty chunks (Whisper handles them, but save API calls)
     if (file.size < 4096) {
       return NextResponse.json({ status: "ok", text: "", duration: 0 });
     }
 
-    // Re-wrap blob with Grok-friendly filename + content-type
-    const grokFilename = pickGrokFilename(file);
-    const grokMime = grokFilename.endsWith(".ogg") ? "audio/ogg"
-                  : grokFilename.endsWith(".m4a") ? "audio/mp4"
-                  : grokFilename.endsWith(".mp3") ? "audio/mpeg"
-                  : grokFilename.endsWith(".wav") ? "audio/wav"
-                  : "audio/ogg";
+    // OpenAI Whisper accepts: m4a, mp3, mp4, mpeg, mpga, wav, webm, oga, ogg, flac
+    // Browser MediaRecorder gives us webm/opus — Whisper takes it directly.
+    const whisperForm = new FormData();
+    whisperForm.append("file", file, file.name || "audio.webm");
+    whisperForm.append("model", "whisper-1");
 
-    const audioBuffer = await file.arrayBuffer();
-    const repackagedBlob = new Blob([audioBuffer], { type: grokMime });
+    // Language hint helps Whisper, but it auto-detects mixed RU/EN well.
+    // For Sufler we send "" to let Whisper decide (it handles code-switching).
+    if (language && language !== "auto" && language.length === 2) {
+      whisperForm.append("language", language.toLowerCase());
+    }
 
-    // Per Grok docs: file MUST come after all other parameters.
-    const grokForm = new FormData();
-    grokForm.append("format", "true");
-    grokForm.append("language", language);
-    grokForm.append("file", repackagedBlob, grokFilename);
+    // response_format=json gives us {"text": "..."}
+    // verbose_json adds duration + segments (useful for word-level later)
+    whisperForm.append("response_format", "json");
 
-    const grokResponse = await fetch("https://api.x.ai/v1/stt", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        // Do NOT set Content-Type — fetch sets multipart boundary automatically
-      },
-      body: grokForm,
-    });
+    const whisperResponse = await fetch(
+      "https://api.openai.com/v1/audio/transcriptions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          // Do NOT set Content-Type — fetch sets multipart boundary
+        },
+        body: whisperForm,
+      }
+    );
 
-    if (!grokResponse.ok) {
-      const errText = await grokResponse.text().catch(() => "");
+    if (!whisperResponse.ok) {
+      const errText = await whisperResponse.text().catch(() => "");
       console.error(
-        `[STT] Grok ${grokResponse.status} for ${grokFilename} (${file.size}b orig=${file.type}):`,
+        `[STT Whisper] ${whisperResponse.status} for ${file.name} (${file.size}b ${file.type}):`,
         errText.slice(0, 300)
       );
       return NextResponse.json(
         {
           status: "error",
-          message: `Grok STT error: ${grokResponse.status}`,
+          message: `Whisper error: ${whisperResponse.status}`,
           details: errText.slice(0, 500),
           debug: {
             origMime: file.type,
-            sentAs: grokFilename,
-            sentMime: grokMime,
             sizeBytes: file.size,
+            engine: "whisper",
           },
         },
-        { status: grokResponse.status }
+        { status: whisperResponse.status }
       );
     }
 
-    const result = await grokResponse.json();
+    const result = await whisperResponse.json();
     return NextResponse.json({
       status: "ok",
       text: result?.text ?? "",
       duration: result?.duration ?? 0,
-      words: result?.words ?? [],
+      words: [],
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Internal server error";
+    const message =
+      error instanceof Error ? error.message : "Internal server error";
     console.error("[STT] Internal error:", message);
     return NextResponse.json(
       { status: "error", message },

@@ -1,23 +1,19 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════════╗
  * ║ 📄  features/translator/useFlow.ts                                 ║
- * ║ 🏷️  version:  2.4.0                                                ║
- * ║ 📅  changed:  2026-04-23                                           ║
+ * ║ 🏷️  version:  2.5.1                                                ║
+ * ║ 📅  changed:  2026-04-25                                           ║
  * ║ 👥  author:   Solar Team · Leanid + Claude                         ║
  * ║                                                                    ║
- * ║ 🎯  PURPOSE — Dashka Sufler hook (Grok STT + 4-layer model)        ║
- * ║                                                                    ║
- * ║     Layer 1 RAW       — what Grok heard                            ║
- * ║     Layer 2 FLOW      — suggestions (optional, learning)           ║
- * ║     Layer 3 CLEAN     — composed sentence (Smart Direction = EN)   ║
- * ║     Layer 4 SPEAK     — handled in CleanBar (calls TTS)            ║
+ * ║ 🎯  PURPOSE — Dashka Sufler hook (Whisper STT + 4-layer model)     ║
  * ║                                                                    ║
  * ║ 🔄 CHANGELOG                                                       ║
+ * ║   v2.5.1 — record audio/mp4 by default (Whisper-friendly)          ║
+ * ║          — fallback chain: mp4 → ogg → webm                        ║
+ * ║          — filename extension matches actual codec                 ║
+ * ║          — increased min chunk size to handle WebM header issue    ║
  * ║   v2.4   — + cleanText (Smart Direction → EN, capitalize, punct)   ║
- * ║          — + isNew flag on suggestions (auto-clear after 6s)       ║
- * ║          — Flow toggle default OFF (was: persisted state only)     ║
  * ║   v2.3.1 — Grok-only STT, mic mutex                                ║
- * ║   v2.3   — initial hybrid Web Speech + Grok                        ║
  * ╚═══════════════════════════════════════════════════════════════════╝
  */
 "use client";
@@ -116,14 +112,26 @@ export function useFlow(): UseFlowReturn {
   /** Send accumulated audio chunks to /api/stt */
   const flushChunks = useCallback(async () => {
     if (chunksRef.current.length === 0) return;
-    const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+    const recorder = mediaRecorderRef.current;
+    const recordedMime = recorder?.mimeType || "audio/webm";
+    const blob = new Blob(chunksRef.current, { type: recordedMime });
     chunksRef.current = [];
 
-    if (blob.size < 2048) return; // skip too-small (mostly silence)
+    // Skip too-small chunks — broken WebM headers, or just silence
+    if (blob.size < 8192) return;
+
+    // Pick filename extension that MATCHES the actual codec.
+    // Whisper uses extension to identify format — wrong ext = 400 error.
+    const ext = recordedMime.includes("mp4") ? "mp4"
+              : recordedMime.includes("m4a") ? "m4a"
+              : recordedMime.includes("ogg") ? "ogg"
+              : recordedMime.includes("mpeg") ? "mp3"
+              : recordedMime.includes("webm") ? "webm"
+              : "webm";
 
     const form = new FormData();
-    form.append("language", "en");
-    form.append("file", blob, `sufler-${Date.now()}.webm`);
+    // Don't send language — Whisper auto-detects mixed RU/EN best
+    form.append("file", blob, `sufler-${Date.now()}.${ext}`);
 
     try {
       const res = await fetch("/api/stt", { method: "POST", body: form });
@@ -133,7 +141,6 @@ export function useFlow(): UseFlowReturn {
         if (newText) {
           setTranscript((prev) => {
             const combined = prev ? `${prev} ${newText}` : newText;
-            // Cap memory — keep last N chars
             return combined.length > MAX_TRANSCRIPT_CHARS * 2
               ? combined.slice(-MAX_TRANSCRIPT_CHARS * 2)
               : combined;
@@ -156,29 +163,58 @@ export function useFlow(): UseFlowReturn {
       streamRef.current = stream;
       chunksRef.current = [];
 
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/mp4")
-          ? "audio/mp4"
-          : "audio/webm";
+      // Prefer Whisper-friendly mime types in order:
+      //  1. audio/mp4 — Safari, modern Chrome — universal
+      //  2. audio/ogg + opus — Firefox
+      //  3. audio/webm — Chrome legacy — works but headers can be quirky
+      const candidates = [
+        "audio/mp4",
+        "audio/mp4;codecs=mp4a.40.2",
+        "audio/ogg;codecs=opus",
+        "audio/webm;codecs=opus",
+        "audio/webm",
+      ];
+      const mimeType = candidates.find((m) => MediaRecorder.isTypeSupported(m))
+        ?? "audio/webm";
 
       const mr = new MediaRecorder(stream, { mimeType });
+
       mr.ondataavailable = (ev) => {
         if (ev.data && ev.data.size > 0) chunksRef.current.push(ev.data);
       };
 
-      mr.start(1000); // emit chunks every 1 second
+      // CRITICAL: Don't pass timeslice to start() — that produces incomplete
+      // WebM/MP4 chunks with broken headers that Whisper can't parse.
+      // Instead: stop and restart recorder every CHUNK_SECONDS to get
+      // complete files with proper headers.
+      mr.start();
       mediaRecorderRef.current = mr;
 
-      // Periodic flush to /api/stt
+      // Periodic stop+restart cycle to get complete audio files
       flushTimerRef.current = window.setInterval(() => {
-        if (enabledRef.current) void flushChunks();
+        if (!enabledRef.current) return;
+        const currentMr = mediaRecorderRef.current;
+        if (currentMr && currentMr.state === "recording") {
+          // Stopping fires final ondataavailable with complete file
+          currentMr.stop();
+          // Process and restart on next tick
+          window.setTimeout(() => {
+            if (!enabledRef.current) return;
+            void flushChunks();
+            const newMr = new MediaRecorder(stream, { mimeType });
+            newMr.ondataavailable = (ev) => {
+              if (ev.data && ev.data.size > 0) chunksRef.current.push(ev.data);
+            };
+            newMr.start();
+            mediaRecorderRef.current = newMr;
+          }, 50);
+        }
       }, CHUNK_SECONDS * 1000);
 
       setRecording(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Microphone access denied");
-      setEnabled(false); // user-visible state goes back to "off"
+      setEnabled(false);
     }
   }, [flushChunks]);
 
