@@ -1,11 +1,14 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════════╗
  * ║ 📄  app/globals.css                                                ║
- * ║ 🏷️  version:  3.0.0                                                ║
+ * ║ 🏷️  version:  3.0.2                                                ║
  * ║ 📅  changed:  2026-04-26                                           ║
  * ║ 👥  author:   Solar Team · Leanid + Claude + Dashka                ║
  * ║                                                                    ║
  * ║ 🔄 CHANGELOG                                                       ║
+ * ║   v3.0.2 — + .share-wrapper / .share-menu / .share-menu-item       ║
+ * ║          — Share dropdown: Text / Audio / Text+Audio               ║
+ * ║          — Mobile-friendly responsive sizing                       ║
  * ║   v3.0.0 — + .flow-section (independent module at bottom)          ║
  * ║          — .flow-section-header (toggle + live indicator)          ║
  * ║          — .flow-learning-toggle (opt-in suggestions)              ║
@@ -1035,4 +1038,123 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   v3.0.2 — SHARE DROPDOWN (Dashka UX)
+   3 buttons: Speak / Copy / Share ▾
+   Share dropdown: Text / Audio / Text+Audio
+   ════════════════════════════════════════════════════════════════════ */
+
+.share-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.share-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.share-trigger-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: inherit;
+  line-height: 1;
+}
+
+.share-caret {
+  font-size: 0.6em;
+  opacity: 0.6;
+  margin-left: 1px;
+}
+
+.share-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 220px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 50;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: shareMenuFadeIn 0.15s ease-out;
+}
+
+@keyframes shareMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.share-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 0.9rem;
+  transition: background-color 0.15s ease;
+}
+
+.share-menu-item:hover {
+  background: var(--bg);
+}
+
+.share-menu-item:focus-visible {
+  outline: 2px solid var(--flow-accent);
+  outline-offset: 1px;
+}
+
+.share-menu-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+  width: 28px;
+  text-align: center;
+}
+
+.share-menu-label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.share-menu-label strong {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--fg);
+}
+
+.share-menu-label small {
+  font-size: 0.75rem;
+  color: var(--fg-dim);
+  font-weight: 400;
+}
+
+/* Mobile: dropdown wider for finger-friendly */
+@media (max-width: 640px) {
+  .share-menu {
+    min-width: 240px;
+    right: -8px;
+  }
 }

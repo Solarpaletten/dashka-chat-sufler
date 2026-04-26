@@ -1,26 +1,18 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════════╗
  * ║ 📄  app/page.tsx                                                   ║
- * ║ 🏷️  version:  3.0.0                                                ║
+ * ║ 🏷️  version:  3.0.2                                                ║
  * ║ 📅  changed:  2026-04-26                                           ║
  * ║ 👥  author:   Solar Team · Leanid + Claude + Dashka                ║
  * ║                                                                    ║
- * ║ 🎯  v3.0 — STABILIZATION: Flow → bottom independent module         ║
- * ║                                                                    ║
- * ║     Architectural decision (Dashka):                                ║
- * ║       Pane = инструмент (top, stable)                              ║
- * ║       Flow = наблюдатель (bottom, optional)                        ║
- * ║                                                                    ║
- * ║     Top section:    Dual-pane translator (UNCHANGED)               ║
- * ║     Middle section: <CleanBar/> (only when Flow ON)                ║
- * ║     Bottom section: 🎧 Flow Section — collapsible, opt-in          ║
+ * ║ 🎯  v3.0.2 — Share dropdown (text / audio / both)                  ║
  * ║                                                                    ║
  * ║ 🔄 CHANGELOG                                                       ║
+ * ║   v3.0.2 — handleShare(paneId, text, lang, voice, shareType)       ║
+ * ║          — shareType: "text" | "audio" | "both"                    ║
+ * ║          — Web Share API: text-only / files-only / text+files     ║
+ * ║          — Fallback: clipboard for text, download for audio        ║
  * ║   v3.0   — Flow toggle moved from header to dedicated section      ║
- * ║          — CleanBar visible only when Flow ON (no clutter)         ║
- * ║          — FlowPanel hidden by default (Learning mode opt-in)      ║
- * ║          — Pane unchanged (stable behavior)                        ║
- * ║          — No logic changes (UI restructure only)                  ║
  * ║   v2.4   — added <CleanBar/> as main layer                         ║
  * ║   v2.3.1 — Grok STT only, mic mutex, bidirectional EN↔RU           ║
  * ╚═══════════════════════════════════════════════════════════════════╝
@@ -29,7 +21,7 @@
 
 import CleanBar from "@/features/translator/CleanBar";
 import FlowPanel from "@/features/translator/FlowPanel";
-import Pane from "@/features/translator/Pane";
+import Pane, { type ShareType } from "@/features/translator/Pane";
 import { LEFT_PANE, PARTNER_LANG, RIGHT_PANE } from "@/features/translator/paneConfigs";
 import {
   type LangCode,
@@ -132,49 +124,96 @@ export default function Home() {
     if (!isPlaying) setActivePlayingPane(null);
   }, [isPlaying]);
 
-  /* ─── SHARE HANDLER ────────────────────────────────────────────── */
+  /* ─── SHARE HANDLER (v3.0.2 — Dashka Share dropdown) ──────────── */
   const handleShare = useCallback(
-    async (paneId: "left" | "right", text: string, lang: LangCode, voice: TtsVoice) => {
+    async (
+      paneId: "left" | "right",
+      text: string,
+      lang: LangCode,
+      voice: TtsVoice,
+      shareType: ShareType
+    ) => {
       if (!text) return;
       setSharingPane(paneId);
       setShareStatus(null);
       try {
-        const blob = await getBlob({ text, language: lang, voice });
         const now = new Date();
         const pad = (n: number) => String(n).padStart(2, "0");
         const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
         const filename = `dashka-${lang.toLowerCase()}-${stamp}.mp3`;
 
-        const file = new File([blob], filename, { type: "audio/mpeg" });
+        // Get audio blob only when needed (audio | both)
+        let file: File | null = null;
+        if (shareType === "audio" || shareType === "both") {
+          const blob = await getBlob({ text, language: lang, voice });
+          file = new File([blob], filename, { type: "audio/mpeg" });
+        }
 
-        const canShareFiles =
+        const wantsText = shareType === "text" || shareType === "both";
+        const wantsFile = shareType === "audio" || shareType === "both";
+
+        // Build share payload
+        const sharePayload: ShareData = {
+          title: "Dashka Translation",
+        };
+        if (wantsText) sharePayload.text = text;
+        if (wantsFile && file) sharePayload.files = [file];
+
+        // Check Web Share API support
+        const canShare =
           typeof navigator !== "undefined" &&
-          typeof navigator.canShare === "function" &&
-          navigator.canShare({ files: [file] });
+          typeof navigator.share === "function";
 
-        if (canShareFiles && typeof navigator.share === "function") {
+        const canShareWithFiles =
+          canShare &&
+          typeof navigator.canShare === "function" &&
+          file !== null
+            ? navigator.canShare({ files: [file] })
+            : false;
+
+        // Decide path: native share vs fallback
+        const useNative =
+          canShare && (!wantsFile || canShareWithFiles);
+
+        if (useNative) {
           try {
-            await navigator.share({
-              title: "Dashka Translation",
-              text,
-              files: [file],
-            });
-            setShareStatus("✓ Отправлено");
+            await navigator.share(sharePayload);
+            setShareStatus(
+              shareType === "text"
+                ? "✓ Текст отправлен"
+                : shareType === "audio"
+                ? "✓ Аудио отправлено"
+                : "✓ Отправлено"
+            );
           } catch (err) {
             if (err instanceof Error && err.name !== "AbortError") {
               setShareStatus(`⚠ ${err.message}`);
             }
           }
         } else {
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setTimeout(() => URL.revokeObjectURL(url), 5000);
-          setShareStatus("⬇ Файл сохранён");
+          // Fallback path
+          if (wantsText && typeof navigator !== "undefined") {
+            try {
+              await navigator.clipboard?.writeText(text);
+            } catch {}
+          }
+          if (wantsFile && file) {
+            const url = URL.createObjectURL(file);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+          }
+          setShareStatus(
+            shareType === "text"
+              ? "✓ Текст скопирован"
+              : shareType === "audio"
+              ? "⬇ Аудио сохранено"
+              : "✓ Текст скопирован, аудио сохранено"
+          );
         }
       } catch (err) {
         setShareStatus(
@@ -216,7 +255,7 @@ export default function Home() {
               <span>Dashka</span>
             </h1>
             <p className="app-subtitle">
-              Dual · {partnerMeta.nativeName} ↔ Русский · v3.0
+              Dual · {partnerMeta.nativeName} ↔ Русский · v3.0.2
             </p>
           </div>
           <div className="app-actions">
@@ -257,7 +296,9 @@ export default function Home() {
             onPlay={(text, lang, voice) => playFor("left", text, lang, voice)}
             onStop={onStop}
             isPlaying={isPlaying && activePlayingPane === "left"}
-            onShareRequest={(text, lang, voice) => handleShare("left", text, lang, voice)}
+            onShareRequest={(text, lang, voice, shareType) =>
+              handleShare("left", text, lang, voice, shareType)
+            }
             isSharing={sharingPane === "left"}
           />
           <Pane
@@ -265,7 +306,9 @@ export default function Home() {
             onPlay={(text, lang, voice) => playFor("right", text, lang, voice)}
             onStop={onStop}
             isPlaying={isPlaying && activePlayingPane === "right"}
-            onShareRequest={(text, lang, voice) => handleShare("right", text, lang, voice)}
+            onShareRequest={(text, lang, voice, shareType) =>
+              handleShare("right", text, lang, voice, shareType)
+            }
             isSharing={sharingPane === "right"}
           />
         </div>
@@ -351,7 +394,7 @@ export default function Home() {
         </section>
 
         <footer className="app-footer">
-          Dashka · v3.0 · {partnerMeta.flag} {partnerMeta.nativeName} · Grok TTS+STT · Solar Team 🚀
+          Dashka · v3.0.2 · {partnerMeta.flag} {partnerMeta.nativeName} · Grok TTS+STT · Solar Team 🚀
         </footer>
       </div>
     </div>

@@ -1,20 +1,32 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════════╗
  * ║ 📄  features/translator/Pane.tsx                                   ║
- * ║ 🏷️  version:  2.6.0                                                ║
- * ║ 📅  changed:  2026-04-25                                           ║
- * ║ 👥  author:   Solar Team · Leanid + Claude                         ║
+ * ║ 🏷️  version:  3.0.2                                                ║
+ * ║ 📅  changed:  2026-04-26                                           ║
+ * ║ 👥  author:   Solar Team · Leanid + Claude + Dashka                ║
+ * ║                                                                    ║
+ * ║ 🎯  v3.0.2 — Share dropdown (text / audio / both)                  ║
+ * ║                                                                    ║
+ * ║     UX evolution (Dashka):                                          ║
+ * ║       Before: 1 Share button (audio + text together)                ║
+ * ║       Now:    Share ▾ dropdown:                                     ║
+ * ║                 ├─ 📝 Text only                                     ║
+ * ║                 ├─ 🔊 Audio only                                    ║
+ * ║                 └─ 📦 Text + Audio                                  ║
+ * ║                                                                    ║
+ * ║     Total: 3 quick buttons + dropdown =                             ║
+ * ║       [🔊 Speak]  [📋 Copy]  [📤 Share ▾]                           ║
  * ║                                                                    ║
  * ║ 🔄 CHANGELOG                                                       ║
- * ║   v2.6.0 — Whisper STT integration via usePane (no Web Speech)     ║
- * ║          — improved aria-label/title for record state              ║
+ * ║   v3.0.2 — Share dropdown (text/audio/both) — Dashka UX            ║
+ * ║          — onShareRequest signature: + shareType param             ║
+ * ║          — click-outside dismissal for dropdown                    ║
  * ║   v2.5.2 — REMOVED mic mutex — Pane mic always works               ║
  * ║   v2.3.1 — added flowActive prop (mic mutex with Sufler) — REMOVED ║
  * ║   v2.2   — Share button + copy feedback                             ║
  * ║   v2.1   — initial Pane                                             ║
  * ╚═══════════════════════════════════════════════════════════════════╝
  */
-// features/translator/Pane.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -22,14 +34,21 @@ import type { LangCode, TtsVoice } from "./types";
 import { LANG_META, TTS_VOICES } from "./types";
 import { usePane } from "./usePane";
 
+export type ShareType = "text" | "audio" | "both";
+
 interface PaneProps {
   pane: ReturnType<typeof usePane>;
   onPlay: (text: string, lang: LangCode, voice: TtsVoice) => void;
   onStop: () => void;
   isPlaying: boolean;
-  onShareRequest: (text: string, lang: LangCode, voice: TtsVoice) => Promise<void>;
+  onShareRequest: (
+    text: string,
+    lang: LangCode,
+    voice: TtsVoice,
+    shareType: ShareType
+  ) => Promise<void>;
   isSharing: boolean;
-  flowActive?: boolean;   // v2.5.2: kept for compat but UNUSED — Pane mic always works
+  flowActive?: boolean;   // v2.5.2: kept for compat but UNUSED
 }
 
 export default function Pane({
@@ -39,19 +58,46 @@ export default function Pane({
   isPlaying,
   onShareRequest,
   isSharing,
-  // flowActive removed from destructuring — we ignore it
 }: PaneProps) {
   const fromMeta = LANG_META[pane.config.from];
   const toMeta = LANG_META[pane.config.to];
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const [shareMenuOpen, setShareMenuOpen] = useState(false);
+  const shareWrapperRef = useRef<HTMLDivElement>(null);
 
+  // Auto-grow textarea
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 400)}px`;
   }, [pane.inputText]);
+
+  // Click-outside dismisses Share dropdown
+  useEffect(() => {
+    if (!shareMenuOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (
+        shareWrapperRef.current &&
+        !shareWrapperRef.current.contains(e.target as Node)
+      ) {
+        setShareMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [shareMenuOpen]);
+
+  // Escape closes dropdown
+  useEffect(() => {
+    if (!shareMenuOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShareMenuOpen(false);
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [shareMenuOpen]);
 
   const copy = () => {
     if (pane.translatedText && typeof navigator !== "undefined") {
@@ -70,9 +116,10 @@ export default function Pane({
     }
   };
 
-  const shareThis = () => {
+  const handleShareAs = (type: ShareType) => {
+    setShareMenuOpen(false);
     if (!pane.translatedText || isSharing) return;
-    void onShareRequest(pane.translatedText, pane.config.to, pane.voice);
+    void onShareRequest(pane.translatedText, pane.config.to, pane.voice, type);
   };
 
   return (
@@ -161,6 +208,7 @@ export default function Pane({
           </span>
           {pane.translatedText && (
             <div className="io-output-actions">
+              {/* 1️⃣ Speak (TTS) */}
               <button
                 type="button"
                 onClick={playThis}
@@ -170,32 +218,85 @@ export default function Pane({
               >
                 {isPlaying ? "⏸" : "🔊"}
               </button>
+
+              {/* 2️⃣ Copy text */}
               <button
                 type="button"
                 onClick={copy}
                 className={`io-btn ${copyFeedback ? "io-btn-success" : ""}`}
-                title={copyFeedback ? "Скопировано!" : "Копировать"}
-                aria-label="Копировать"
+                title={copyFeedback ? "Скопировано!" : "Копировать текст"}
+                aria-label="Копировать текст"
               >
                 {copyFeedback ? "✓" : "📋"}
               </button>
-              <button
-                type="button"
-                onClick={shareThis}
-                disabled={isSharing}
-                className={`io-btn ${isSharing ? "io-btn-loading" : ""}`}
-                title="Поделиться озвучкой"
-                aria-label="Поделиться аудио-переводом"
-              >
-                {isSharing ? (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="animate-spin">
-                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
-                    <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                  </svg>
-                ) : (
-                  "📤"
+
+              {/* 3️⃣ Share dropdown */}
+              <div className="share-wrapper" ref={shareWrapperRef}>
+                <button
+                  type="button"
+                  onClick={() => setShareMenuOpen((v) => !v)}
+                  disabled={isSharing}
+                  className={`io-btn share-trigger ${
+                    isSharing ? "io-btn-loading" : ""
+                  } ${shareMenuOpen ? "io-btn-active" : ""}`}
+                  title="Поделиться"
+                  aria-label="Открыть меню отправки"
+                  aria-expanded={shareMenuOpen}
+                  aria-haspopup="menu"
+                >
+                  {isSharing ? (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="animate-spin">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+                      <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                    </svg>
+                  ) : (
+                    <span className="share-trigger-content">
+                      📤<span className="share-caret">▾</span>
+                    </span>
+                  )}
+                </button>
+
+                {shareMenuOpen && !isSharing && (
+                  <div className="share-menu" role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="share-menu-item"
+                      onClick={() => handleShareAs("text")}
+                    >
+                      <span className="share-menu-icon">📝</span>
+                      <span className="share-menu-label">
+                        <strong>Текст</strong>
+                        <small>только сообщение</small>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="share-menu-item"
+                      onClick={() => handleShareAs("audio")}
+                    >
+                      <span className="share-menu-icon">🎵</span>
+                      <span className="share-menu-label">
+                        <strong>Аудио</strong>
+                        <small>только MP3 файл</small>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="share-menu-item"
+                      onClick={() => handleShareAs("both")}
+                    >
+                      <span className="share-menu-icon">📦</span>
+                      <span className="share-menu-label">
+                        <strong>Текст + Аудио</strong>
+                        <small>сообщение и MP3</small>
+                      </span>
+                    </button>
+                  </div>
                 )}
-              </button>
+              </div>
             </div>
           )}
         </div>
