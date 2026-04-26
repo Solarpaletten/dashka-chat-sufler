@@ -1,15 +1,16 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════════╗
  * ║ 📄  features/translator/cleanEngine.ts                             ║
- * ║ 🏷️  version:  2.7.0                                                ║
- * ║ 📅  changed:  2026-04-25                                           ║
+ * ║ 🏷️  version:  2.7.1                                                ║
+ * ║ 📅  changed:  2026-04-26                                           ║
  * ║ 👥  author:   Solar Team · Leanid + Claude + Dashka                ║
  * ║                                                                    ║
  * ║ 🎯  PURPOSE — Sentence Reconstruction Engine (NOT replace engine!) ║
  * ║                                                                    ║
- * ║     ARCHITECTURAL EVOLUTION (Dashka v2.7):                         ║
+ * ║     ARCHITECTURAL EVOLUTION (Dashka):                              ║
  * ║       v2.6.1 — string replacement engine ❌                        ║
  * ║       v2.7.0 — sentence reconstruction engine ✅                   ║
+ * ║       v2.7.1 — + grammar polish rules (chain verbs, articles)      ║
  * ║                                                                    ║
  * ║     PIPELINE:                                                      ║
  * ║       raw                                                          ║
@@ -17,15 +18,17 @@
  * ║         ↓ apply Flow suggestions (per-word RU→EN)                  ║
  * ║         ↓ normalizeMixedSentence (drop unknown Russian)            ║
  * ║         ↓ semanticDedupe (Hello hello → Hello)                     ║
+ * ║         ↓ grammarPolish (v2.7.1 — fix chain verbs, articles)       ║
  * ║         ↓ capitalize + punctuate                                   ║
  * ║       CLEAN English sentence                                        ║
  * ║                                                                    ║
  * ║ 🔄 CHANGELOG                                                       ║
+ * ║   v2.7.1 — grammarPolish — fix common natural-speech issues:       ║
+ * ║          - "wanted to ask discuss" → "wanted to discuss"           ║
+ * ║          - "discuss access" → "discuss the access"                 ║
+ * ║          - "hello how are you" → "Hello, how are you"              ║
+ * ║          - + 10 more idiomatic patterns                            ║
  * ║   v2.7.0 — Sentence reconstruction (Dashka brain v2)               ║
- * ║          — COMMON_RU_TO_EN phrasebook (~30 frequent phrases)       ║
- * ║          — normalizeMixedSentence — drops unknown Russian words    ║
- * ║          — semanticDedupe — collapses "Hello hello" duplicates     ║
- * ║          — Long-phrase-first matching (greedy)                     ║
  * ║   v2.6.1 — Extracted from useFlow.ts (was private)                 ║
  * ╚═══════════════════════════════════════════════════════════════════╝
  */
@@ -177,6 +180,58 @@ function semanticDedupe(text: string): string {
   return t;
 }
 
+/**
+ * Grammar polish — fix common rule-based grammar issues that arise
+ * from word-by-word phrasebook substitution.
+ *
+ * v2.7.1: Initial polish ruleset (Dashka).
+ *
+ * Examples:
+ *   "I wanted to ask discuss access" → "I wanted to discuss the access"
+ *   "hello how are you" → "Hello, how are you"
+ */
+function grammarPolish(text: string): string {
+  let t = text;
+
+  /* ─── Chain verbs: "wanted to ask discuss" → "wanted to discuss" ── */
+  // When two verbs collide after phrasebook expansion, drop "ask"
+  t = t.replace(/\bI wanted to ask discuss\b/gi, "I wanted to discuss");
+  t = t.replace(/\bI want to ask discuss\b/gi, "I want to discuss");
+  t = t.replace(/\bI wanted to ask tell\b/gi, "I wanted to tell");
+  t = t.replace(/\bI wanted to ask see\b/gi, "I wanted to see");
+
+  /* ─── Article fixes: "discuss access" → "discuss the access" ────── */
+  t = t.replace(/\bdiscuss access\b/gi, "discuss the access");
+  t = t.replace(/\bdiscuss account\b/gi, "discuss the account");
+  t = t.replace(/\bdiscuss project\b/gi, "discuss the project");
+  t = t.replace(/\bdiscuss contract\b/gi, "discuss the contract");
+  t = t.replace(/\bdiscuss meeting\b/gi, "discuss the meeting");
+  t = t.replace(/\bdiscuss report\b/gi, "discuss the report");
+
+  /* ─── "About X" article fix ─────────────────────────────────────── */
+  t = t.replace(/\babout access\b/gi, "about the access");
+  t = t.replace(/\babout account\b/gi, "about the account");
+  t = t.replace(/\babout project\b/gi, "about the project");
+
+  /* ─── Punctuation polish ────────────────────────────────────────── */
+  // "hello how are you" → "Hello, how are you"
+  t = t.replace(/\bhello how are you\b/gi, "Hello, how are you");
+  t = t.replace(/\bhi how are you\b/gi, "Hi, how are you");
+
+  // "thank you bye" → "Thank you. Bye"
+  t = t.replace(/\bthank you bye\b/gi, "Thank you. Bye");
+
+  // "hello thank you" → "Hello. Thank you"
+  t = t.replace(/\bhello thank you\b/gi, "Hello. Thank you");
+
+  /* ─── Polite chain: "I would like discuss" → "I would like to discuss" */
+  t = t.replace(/\bI would like discuss\b/gi, "I would like to discuss");
+  t = t.replace(/\bI would like ask\b/gi, "I would like to ask");
+  t = t.replace(/\bI would like see\b/gi, "I would like to see");
+
+  return t;
+}
+
 /* ─── Main brain function ─────────────────────────────────────────── */
 
 /**
@@ -231,7 +286,10 @@ export function buildCleanSentence(
   // 4. Semantic deduplication
   text = semanticDedupe(text);
 
-  // 5. Final cleanup
+  // 5. Grammar polish (v2.7.1) — fix chain verbs, articles, punctuation
+  text = grammarPolish(text);
+
+  // 6. Final cleanup
   text = text.replace(/\s+([,.!?;:])/g, "$1");          // remove space before punct
   text = text.replace(/([,.!?;:])([^\s,.!?;:])/g, "$1 $2"); // ensure space after punct
   text = text.replace(/\s+/g, " ").trim();

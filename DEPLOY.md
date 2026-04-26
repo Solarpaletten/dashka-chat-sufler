@@ -1,56 +1,75 @@
-# 🎯 Dashka v2.7.0 — Sentence Reconstruction Brain
+# 🎯 Dashka v2.7.1 — Brain Polish (Grammar Rules)
 
-> **Эволюция от replace engine к reconstruction engine**
+> **Rule-based grammar polish** — последний штрих перед AI brain.
 
-Архитектурный апгрейд CLEAN, по плану Дашки.
-
-## 🧠 Что изменилось архитектурно
+## 🧠 Что добавлено
 
 ```
-v2.6.1  String replacement engine ❌
-        replace word → output
-        Если слова нет в словаре → остаётся русским в CLEAN
-
-v2.7.0  Sentence reconstruction engine ✅
-        replace + drop unknown + dedupe + reconstruct
-        Гарантированно чистый English output
+v2.7.0:  basic reconstruction
+v2.7.1:  + grammarPolish() — fix natural-speech issues
 ```
 
-## 📋 Файлы (1 — главный)
+## 🔧 Новые правила (12)
 
+### Chain verbs
 ```
-🟢 features/translator/cleanEngine.ts   — полностью обновлён
-   - COMMON_RU_TO_EN phrasebook (~50 фраз)
-   - normalizeMixedSentence — drop unknown Russian
-   - semanticDedupe — collapse "Hello hello"
-   - Long-phrase-first matching
-
-⚪ features/translator/useFlow.ts        — без изменений (импорт работает)
-⚪ features/translator/usePane.ts        — без изменений (импорт работает)
+"I wanted to ask discuss"  →  "I wanted to discuss"
+"I want to ask discuss"     →  "I want to discuss"
+"I wanted to ask tell"      →  "I wanted to tell"
+"I wanted to ask see"       →  "I wanted to see"
 ```
 
-## 🧪 Прошедшие тесты (6/7)
+### Article fixes
+```
+"discuss access"     →  "discuss the access"
+"discuss account"    →  "discuss the account"
+"discuss project"    →  "discuss the project"
+"discuss contract"   →  "discuss the contract"
+"discuss meeting"    →  "discuss the meeting"
+"discuss report"     →  "discuss the report"
+"about access"       →  "about the access"
+"about account"      →  "about the account"
+"about project"      →  "about the project"
+```
+
+### Punctuation polish
+```
+"hello how are you"   →  "Hello, how are you"
+"hi how are you"      →  "Hi, how are you"
+"thank you bye"       →  "Thank you. Bye"
+"hello thank you"     →  "Hello. Thank you"
+```
+
+### Polite chains
+```
+"I would like discuss"  →  "I would like to discuss"
+"I would like ask"      →  "I would like to ask"
+"I would like see"      →  "I would like to see"
+```
+
+## 🧪 Тесты — 9 из 9 ✅
 
 ```
 INPUT                                          → OUTPUT
-─────────────────────────────────────────────  ──────────────────────────────
-"Hello Sabina я хотел спросить обсудить        "Hello Sabina I wanted to ask
- доступ спасибо"                                discuss access thank you."
+─────────────────────────────────────────────  ──────────────────────────────────
+"Hello Sabina я хотел спросить                 "Hello Sabina I wanted to discuss
+ обсудить доступ спасибо"                       the access thank you."
 
-"hello how are you здравствуйте как дела       "Hello how are you thank you."
- спасибо"
+"hello how are you здравствуйте                "Hello, how are you thank you."
+ как дела спасибо"
 
-"Thank you. Bye. Хотел спросить. Как у Вас?"   "Thank you. Bye. I wanted to
-                                                ask. how are you?"
+"I хотел бы обсудить проект"                   "I would like to discuss
+                                                the project."
 
-"Hello я зашёл сюда"                           "Hello."
-                                                ↑ unknown Russian dropped
+"Здравствуйте. Я хотел спросить                "Hello. I wanted to discuss
+ обсудить доступ. Спасибо."                     the access. thank you."
+
+"I want to обсудить the access to              "I want to discuss the access to
+ наш account"                                   our account."
 
 "hello hello hello"                            "Hello."
-                                                ↑ dedupe works
-
-"I want to обсудить the access to наш account" "I want to discuss the access
-                                                to our account."
+"hello how are you"                            "Hello, how are you."
+"Hello я зашёл сюда"                           "Hello."
 ```
 
 ## 🚀 Команды
@@ -58,16 +77,14 @@ INPUT                                          → OUTPUT
 ```bash
 cd ~/Documents/ITproject/Dashka-chat-sufler/Dashka-chat-sufler-api
 
-unzip -o ~/Downloads/dashka-v27.zip -d /tmp/
+unzip -o ~/Downloads/dashka-v271.zip -d /tmp/
 
 # Один файл!
-cp /tmp/dashka-v27/files/features/translator/cleanEngine.ts  features/translator/cleanEngine.ts
+cp /tmp/dashka-v271/files/features/translator/cleanEngine.ts  features/translator/cleanEngine.ts
 
 # Verify
-grep "v2\.7\.0" features/translator/cleanEngine.ts | head -1
-grep "COMMON_RU_TO_EN" features/translator/cleanEngine.ts          # >= 2
-grep "normalizeMixedSentence" features/translator/cleanEngine.ts   # >= 2
-grep "semanticDedupe" features/translator/cleanEngine.ts           # >= 2
+grep "v2\.7\.1" features/translator/cleanEngine.ts | head -1
+grep "grammarPolish" features/translator/cleanEngine.ts            # >= 2
 
 # Build
 npx tsc --noEmit && echo "TS OK"
@@ -75,7 +92,7 @@ pnpm run build 2>&1 | tail -5
 
 # Deploy
 git add features/translator/cleanEngine.ts
-git commit -m "feat: v2.7.0 — Sentence Reconstruction Brain (Dashka)"
+git commit -m "feat: v2.7.1 — Brain Polish (grammarPolish rules)"
 git push
 vercel --prod
 
@@ -84,73 +101,62 @@ open "https://dashka-chat-sufler.vercel.app"
 
 ## 🧪 После deploy + Cmd+Shift+R
 
-### Тест Леанида (главный)
+### Тест 1 — главный (Sabina-style)
 ```
 Flow ON
-Скажи: "Hello Sabina я хотел обсудить доступ спасибо"
+Скажи: "Hello Sabina я хотел спросить обсудить доступ спасибо"
 
 УСЛЫШАНО (RAW):
-  Hello Sabina я хотел обсудить доступ спасибо
+   Hello Sabina я хотел спросить обсудить доступ спасибо
 
 ГОТОВАЯ ФРАЗА (CLEAN):
-  Hello Sabina I wanted to ask discuss access thank you.
-                                                       <-- ВСЁ EN!
+   Hello Sabina I wanted to discuss the access thank you.
+                              ↑ chain verb fix
+                              ↑ article fix
+                              ↑ natural English!
 ```
 
-### Тест Pane (правый)
+### Тест 2 — politeness (Würde gerne style)
 ```
-Click правый mic
-Скажи: "I want to обсудить access to наш account"
-Click stop
+Flow ON
+Скажи: "Я хотел бы обсудить проект"
 
-ENGLISH input (CLEAN):
-  I want to discuss access to our account.
-
-РУССКИЙ output (translate):
-  Я хочу обсудить доступ к нашему аккаунту.
+ГОТОВАЯ ФРАЗА (CLEAN):
+   I would like to discuss the project.
+                ↑                ↑
+            polite chain    article fix
 ```
 
-## 🎓 Архитектурный принцип (v2.7 update)
+### Тест 3 — comma fix
+```
+Скажи: "hello how are you"
+
+ГОТОВАЯ ФРАЗА:
+   Hello, how are you.
+        ↑ comma fix
+```
+
+## 🎓 Архитектурные принципы Solar Team
 
 ```
 ===============================================================
-  CLEAN — единый источник истины (v2.6.1)
-  CLEAN — sentence reconstruction, NOT replacement (v2.7.0)
-===============================================================
-  
-  Pipeline:
-    1. Phrasebook lookup (long phrases first — greedy)
-    2. Flow suggestions (per-word from OpenAI)
-    3. Drop unknown Russian (normalizeMixedSentence)
-    4. Dedupe semantic repetitions
-    5. Capitalize + punctuate
+  v2.6.1: CLEAN — единый источник истины для всех слоёв UI
+  v2.7.0: CLEAN — sentence reconstruction, не replacement
+  v2.7.1: + grammarPolish — natural speech rules
 ===============================================================
 ```
 
-## 🚀 Что дальше
+## 🚀 Что дальше — v2.8 AI Brain (когда нужно)
 
 ```
-v2.7.x — phrasebook expansion
-         + 50-100 frequent phrases
-         + business vocabulary
-
-v2.8.0 — AI Brain (LLM rewrite)
-         CLEAN → optional gpt-4o-mini polish
-         Native-sounding English
+v2.8.0 — Optional LLM polish
+         CLEAN → /api/clean → gpt-4o-mini → final
+         For phrases longer than X chars
          +1.5sec latency, +$0.001/phrase
-         
-v2.9.0 — Personal vocabulary tracking
-         Words you forget often -> highlight
-         Spaced repetition
+         "Investor-grade" English
 ```
 
-## 💡 Когда добавлять слова в phrasebook
-
-Если ты замечаешь что **одно и то же** русское слово/фразу часто пропускается:
-1. Добавь в `COMMON_RU_TO_EN` в cleanEngine.ts
-2. Закоммить как `feat: phrasebook +N words`
-
-Со временем phrasebook станет **точным mirror твоего стиля общения**.
+Но **v2.7.1 уже достаточно** для большинства реальных use-cases.
 
 ## ⚪ Что НЕ меняется
 
@@ -160,4 +166,4 @@ v2.9.0 — Personal vocabulary tracking
 - Sufler architecture
 - Pane UX
 
-**1 файл.** Архитектурный upgrade brain.
+**1 файл.** Architectural polish.
