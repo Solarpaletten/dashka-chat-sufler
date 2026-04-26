@@ -1,4 +1,36 @@
-// features/translator/usePane.ts
+/**
+ * ╔═══════════════════════════════════════════════════════════════════╗
+ * ║ 📄  features/translator/usePane.ts                                 ║
+ * ║ 🏷️  version:  2.6.1                                                ║
+ * ║ 📅  changed:  2026-04-25                                           ║
+ * ║ 👥  author:   Solar Team · Leanid + Claude + Dashka                ║
+ * ║                                                                    ║
+ * ║ 🎯  PURPOSE — Pane hook (Whisper STT → CLEAN → translate)          ║
+ * ║                                                                    ║
+ * ║     ARCHITECTURAL PRINCIPLE (v2.6.1):                              ║
+ * ║       "CLEAN — единый источник истины для ВСЕХ слоёв UI"          ║
+ * ║                                                                    ║
+ * ║     OLD pipeline (v2.6.0 — broken):                                ║
+ * ║       mic → Whisper RAW → translate → display                      ║
+ * ║                          ↑                                          ║
+ * ║                          mixed RU+EN confused the model            ║
+ * ║                                                                    ║
+ * ║     NEW pipeline (v2.6.1 — Dashka's vision):                       ║
+ * ║       mic → Whisper RAW → analyzeAndClean → CLEAN → translate      ║
+ * ║                                ↑                                    ║
+ * ║                                same brain as Sufler                ║
+ * ║                                                                    ║
+ * ║     RIGHT Pane special: source language is null (auto-detect)      ║
+ * ║       because input may be mixed RU+EN.                            ║
+ * ║                                                                    ║
+ * ║ 🔄 CHANGELOG                                                       ║
+ * ║   v2.6.1 — Pane uses CLEAN before translate (Dashka brain fix)     ║
+ * ║          — Right pane sends source=null (auto-detect)              ║
+ * ║          — Stores both rawText and cleanText for visibility        ║
+ * ║   v2.6.0 — REPLACED Web Speech API with Whisper STT                ║
+ * ║   v2.1   — initial Web Speech version                              ║
+ * ╚═══════════════════════════════════════════════════════════════════╝
+ */
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -7,8 +39,8 @@ import {
   type PaneConfig,
   type TtsVoice,
   type TranslateResponse,
-  LANG_META,
 } from "./types";
+import { analyzeAndClean } from "./cleanEngine";
 
 interface UsePaneArgs {
   config: PaneConfig;
@@ -17,20 +49,6 @@ interface UsePaneArgs {
 }
 
 const MAX_CHARS = 5000;
-
-function useDebounce<T extends (...args: Parameters<T>) => void>(
-  fn: T,
-  delay: number
-): T {
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  return useCallback(
-    (...args: Parameters<T>) => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => fn(...args), delay);
-    },
-    [fn, delay]
-  ) as T;
-}
 
 export function usePane({ config, autoTTS, onTranslated }: UsePaneArgs) {
   const [state, setState] = useState<PaneState>({
@@ -42,7 +60,10 @@ export function usePane({ config, autoTTS, onTranslated }: UsePaneArgs) {
     voice: config.defaultVoice,
     isPlaying: false,
   });
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
   const set = useCallback(
     (partial: Partial<PaneState>) =>
@@ -56,12 +77,17 @@ export function usePane({ config, autoTTS, onTranslated }: UsePaneArgs) {
       if (!text) return;
       if (!silent) set({ isTranslating: true, error: null });
       try {
+        // v2.6.1: Right pane (Speech Completion) sends source=null
+        // because input may be mixed RU+EN — let server auto-detect.
+        // Left pane (Beginner) keeps explicit source for cleaner handling.
+        const isRightPane = config.id === "right";
+
         const res = await fetch("/api/translate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             text,
-            source_language: config.from,
+            source_language: isRightPane ? null : config.from,
             target_language: config.to,
           }),
         });
@@ -70,7 +96,6 @@ export function usePane({ config, autoTTS, onTranslated }: UsePaneArgs) {
           throw new Error(data?.message || `HTTP ${res.status}`);
         }
         set({ translatedText: data.translated_text });
-        // Авто-TTS только для финального перевода (не для партиальных)
         if (!silent && autoTTS && onTranslated) {
           onTranslated(data.translated_text, config.to, state.voice);
         }
@@ -82,18 +107,8 @@ export function usePane({ config, autoTTS, onTranslated }: UsePaneArgs) {
         if (!silent) set({ isTranslating: false });
       }
     },
-    [state.inputText, state.voice, config.from, config.to, autoTTS, onTranslated, set]
+    [state.inputText, state.voice, config.id, config.from, config.to, autoTTS, onTranslated, set]
   );
-
-  const translatePartial = useCallback(
-    (text: string) => {
-      if (!text.trim()) return;
-      // silent=true: не трогаем loading и не триггерим авто-TTS
-      void translate(text, true);
-    },
-    [translate]
-  );
-  const debouncedPartial = useDebounce(translatePartial, 500);
 
   const clear = useCallback(() => {
     set({ inputText: "", translatedText: "", error: null });
@@ -121,64 +136,141 @@ export function usePane({ config, autoTTS, onTranslated }: UsePaneArgs) {
     if (saved) setState((prev) => ({ ...prev, voice: saved }));
   }, [config.id]);
 
-  const toggleMic = useCallback(() => {
+  /** Cleanup on unmount */
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
+
+  /** Send recorded audio to Whisper */
+  const sendToWhisper = useCallback(async (blob: Blob, mimeType: string) => {
+    set({ micState: "Processing", error: null });
+
+    const ext = mimeType.includes("mp4") ? "mp4"
+              : mimeType.includes("ogg") ? "ogg"
+              : mimeType.includes("webm") ? "webm"
+              : "webm";
+
+    const form = new FormData();
+    // For LEFT pane (RU→EN): hint Russian for cleaner transcription
+    // For RIGHT pane (EN→RU): no language hint — auto-detect for mixed input
+    if (config.from === "RU") {
+      form.append("language", "ru");
+    }
+    form.append("file", blob, `pane-${config.id}-${Date.now()}.${ext}`);
+
+    try {
+      const res = await fetch("/api/stt", { method: "POST", body: form });
+      const data = await res.json();
+      if (data?.status === "ok" && data.text) {
+        const rawText = String(data.text).trim().slice(0, MAX_CHARS);
+        if (rawText) {
+          // ═══════════════════════════════════════════════════════════
+          // v2.6.1 BRAIN FIX (Dashka's vision):
+          //   STT → CLEAN → translate (NOT STT → translate)
+          //
+          // For RIGHT pane (Speech Completion mode) — apply CLEAN
+          //   because input is mixed RU+EN, needs normalization.
+          //
+          // For LEFT pane (Beginner mode) — skip CLEAN
+          //   because input is pure Russian, no replacement needed.
+          // ═══════════════════════════════════════════════════════════
+          let displayText = rawText;
+          if (config.id === "right") {
+            try {
+              const { cleanText } = await analyzeAndClean(rawText);
+              if (cleanText) displayText = cleanText;
+            } catch {
+              // CLEAN failed — fall through with raw text
+            }
+          }
+
+          // Show CLEAN (or raw) in input field
+          setState((prev) => ({ ...prev, inputText: displayText, micState: "Idle" }));
+          // Auto-translate from CLEAN (single source of truth)
+          await translate(displayText, false);
+        } else {
+          set({ micState: "Idle" });
+        }
+      } else {
+        set({
+          micState: "Idle",
+          error: data?.message ?? "Не удалось распознать речь",
+        });
+      }
+    } catch (err) {
+      set({
+        micState: "Idle",
+        error: err instanceof Error ? err.message : "Ошибка распознавания",
+      });
+    }
+  }, [config.from, config.id, set, translate]);
+
+  const toggleMic = useCallback(async () => {
+    // Already recording → stop and process
     if (state.micState === "Recording") {
-      recognitionRef.current?.stop();
-      set({ micState: "Processing" });
+      const mr = mediaRecorderRef.current;
+      if (mr && mr.state === "recording") {
+        mr.stop(); // ondataavailable will fire with complete blob
+      }
       return;
     }
     if (state.micState === "Processing") return;
 
-    const Ctor =
-      typeof window !== "undefined"
-        ? window.SpeechRecognition ?? window.webkitSpeechRecognition
-        : undefined;
-    if (!Ctor) {
-      set({ error: "Распознавание речи не поддерживается в этом браузере" });
-      return;
-    }
+    // Start new recording
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      chunksRef.current = [];
 
-    const fromMeta = LANG_META[config.from];
-    const rec = new Ctor();
-    rec.lang = fromMeta.speechLocale;
-    rec.continuous = true;
-    rec.interimResults = true;
+      // Whisper-friendly mime types
+      const candidates = [
+        "audio/mp4",
+        "audio/mp4;codecs=mp4a.40.2",
+        "audio/ogg;codecs=opus",
+        "audio/webm;codecs=opus",
+        "audio/webm",
+      ];
+      const mimeType = candidates.find((m) => MediaRecorder.isTypeSupported(m))
+        ?? "audio/webm";
 
-    rec.onresult = (event: SpeechRecognitionEvent) => {
-      let finalText = "";
-      let interim = "";
-      for (let i = 0; i < event.results.length; i++) {
-        const r = event.results[i];
-        if (r.isFinal) finalText += r[0].transcript + " ";
-        else interim += r[0].transcript;
-      }
-      const display = (finalText + interim).trim().slice(0, MAX_CHARS);
-      setState((prev) => ({ ...prev, inputText: display }));
-      debouncedPartial(display);
-    };
+      const mr = new MediaRecorder(stream, { mimeType });
 
-    rec.onerror = (e: SpeechRecognitionErrorEvent) => {
-      if (e.error === "no-speech") return;
-      set({ micState: "Idle", error: `Ошибка микрофона: ${e.error}` });
-    };
+      mr.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) chunksRef.current.push(ev.data);
+      };
 
-    rec.onend = () => {
-      setState((prev) => {
-        if (prev.micState === "Processing") {
-          // финальный перевод + авто-TTS
-          void translate(prev.inputText, false).finally(() =>
-            setState((p2) => ({ ...p2, micState: "Idle" }))
-          );
-          return prev;
+      mr.onstop = async () => {
+        // Stop the stream
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((t) => t.stop());
+          streamRef.current = null;
         }
-        return { ...prev, micState: "Idle" };
-      });
-    };
+        // Build complete blob
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        chunksRef.current = [];
 
-    recognitionRef.current = rec;
-    rec.start();
-    set({ micState: "Recording", error: null });
-  }, [state.micState, config.from, set, debouncedPartial, translate]);
+        if (blob.size < 4096) {
+          set({ micState: "Idle", error: "Слишком короткая запись" });
+          return;
+        }
+        await sendToWhisper(blob, mimeType);
+      };
+
+      mr.start();
+      mediaRecorderRef.current = mr;
+      set({ micState: "Recording", error: null });
+    } catch (err) {
+      set({
+        micState: "Idle",
+        error: err instanceof Error ? err.message : "Доступ к микрофону запрещён",
+      });
+    }
+  }, [state.micState, set, sendToWhisper]);
 
   return {
     ...state,

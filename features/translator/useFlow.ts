@@ -1,13 +1,16 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════════╗
  * ║ 📄  features/translator/useFlow.ts                                 ║
- * ║ 🏷️  version:  2.5.1                                                ║
+ * ║ 🏷️  version:  2.6.1                                                ║
  * ║ 📅  changed:  2026-04-25                                           ║
- * ║ 👥  author:   Solar Team · Leanid + Claude                         ║
+ * ║ 👥  author:   Solar Team · Leanid + Claude + Dashka                ║
  * ║                                                                    ║
  * ║ 🎯  PURPOSE — Dashka Sufler hook (Whisper STT + 4-layer model)     ║
  * ║                                                                    ║
  * ║ 🔄 CHANGELOG                                                       ║
+ * ║   v2.6.1 — Extracted buildCleanSentence to cleanEngine.ts          ║
+ * ║          — Now imports shared CLEAN logic                          ║
+ * ║          — Same behavior, but reusable from Pane                   ║
  * ║   v2.5.1 — record audio/mp4 by default (Whisper-friendly)          ║
  * ║          — fallback chain: mp4 → ogg → webm                        ║
  * ║          — filename extension matches actual codec                 ║
@@ -20,6 +23,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FlowSuggestion } from "./types";
+import { buildCleanSentence } from "./cleanEngine";
 
 const CHUNK_SECONDS = 4;          // send to Grok every 4 seconds
 const FLOW_DEBOUNCE_MS = 600;     // debounce flow analysis after STT update
@@ -284,54 +288,6 @@ export function useFlow(): UseFlowReturn {
   };
 }
 
-/* ─── Clean sentence builder (v2.4) ───────────────────────────────── */
-
-/**
- * Smart Direction = English. Replaces RU words found in `raw` with their
- * EN translations from `suggestions`. Then capitalize first letter and
- * append punctuation if missing.
- *
- * Rules:
- *  - Only Russian-sourced suggestions are applied (we want English output)
- *  - Whole-word match, case-insensitive
- *  - Preserves spacing
- *  - Trims trailing/leading whitespace
- *  - Capitalizes first letter
- *  - Adds "." if no terminal punctuation [.!?]
- */
-function buildCleanSentence(raw: string, suggestions: FlowSuggestion[]): string {
-  if (!raw.trim()) return "";
-
-  let text = raw.trim();
-
-  // Apply RU → EN replacements (Smart Direction = EN)
-  for (const s of suggestions) {
-    if (s.sourceLanguage !== "ru") continue;
-    if (!s.original || !s.translation) continue;
-
-    // Whole-word, case-insensitive replace.
-    // Russian words use Cyrillic, so \b doesn't match them — use lookarounds.
-    const escaped = s.original.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    try {
-      const re = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "giu");
-      text = text.replace(re, s.translation);
-    } catch {
-      // Fallback for environments without lookbehind
-      text = text.replace(new RegExp(escaped, "gi"), s.translation);
-    }
-  }
-
-  // Collapse multiple spaces
-  text = text.replace(/\s+/g, " ").trim();
-  if (!text) return "";
-
-  // Capitalize first letter (handles unicode)
-  text = text.charAt(0).toUpperCase() + text.slice(1);
-
-  // Append "." if no terminal punctuation
-  if (!/[.!?]$/.test(text)) {
-    text += ".";
-  }
-
-  return text;
-}
+/* ─── Clean sentence builder ───────────────────────────────────────── */
+// v2.6.1: Moved to cleanEngine.ts for reuse by Pane.
+// See `import { buildCleanSentence } from "./cleanEngine"` at the top.

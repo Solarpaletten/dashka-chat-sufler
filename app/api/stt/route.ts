@@ -1,26 +1,18 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════════╗
  * ║ 📄  app/api/stt/route.ts                                           ║
- * ║ 🏷️  version:  2.5.0                                                ║
+ * ║ 🏷️  version:  2.6.0                                                ║
  * ║ 📅  changed:  2026-04-25                                           ║
- * ║ 👥  author:   Solar Team · Leanid + Claude + Solana                ║
+ * ║ 👥  author:   Solar Team · Leanid + Claude                         ║
  * ║                                                                    ║
- * ║ 🎯  PURPOSE — Speech-to-Text via OpenAI Whisper                    ║
- * ║                                                                    ║
- * ║     Why Whisper instead of Grok:                                   ║
- * ║     - Grok rejects browser webm/opus (400: corrupt audio format)   ║
- * ║     - Even after webm→ogg rename, Grok refuses                     ║
- * ║     - Whisper natively accepts webm without conversion             ║
- * ║     - Better multilingual support (RU+EN mix)                      ║
- * ║                                                                    ║
- * ║ 💰 Cost: $0.006/min (vs Grok $0.10/hr = $0.00167/min)              ║
- * ║          ~10min meeting = $0.06 (negligible)                       ║
+ * ║ 🎯  PURPOSE — Whisper STT proxy with anti-hallucination tweaks     ║
  * ║                                                                    ║
  * ║ 🔄 CHANGELOG                                                       ║
+ * ║   v2.6.0 — temperature=0 (deterministic, fewer hallucinations)     ║
+ * ║          — prompt parameter to anchor Whisper context              ║
+ * ║          — stricter min size (4096 → 8192) to skip tiny chunks     ║
  * ║   v2.5.0 — switched from Grok to OpenAI Whisper                    ║
- * ║          — accepts webm directly, no repackaging needed            ║
- * ║          — kept XAI_API_KEY for TTS (Leo voice still works)        ║
- * ║   v2.4.2 — Grok webm→ogg rename (FAILED — Grok rejects ogg too)    ║
+ * ║   v2.4.2 — Grok webm→ogg rename (FAILED)                           ║
  * ║   v2.3.1 — Grok STT integration                                    ║
  * ╚═══════════════════════════════════════════════════════════════════╝
  */
@@ -54,16 +46,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Skip silent/empty chunks (Whisper handles them, but save API calls)
-    if (file.size < 4096) {
+    // Skip too-small chunks — broken WebM headers or just silence
+    if (file.size < 8192) {
       return NextResponse.json({ status: "ok", text: "", duration: 0 });
     }
 
     // OpenAI Whisper accepts: m4a, mp3, mp4, mpeg, mpga, wav, webm, oga, ogg, flac
-    // Browser MediaRecorder gives us webm/opus — Whisper takes it directly.
     const whisperForm = new FormData();
     whisperForm.append("file", file, file.name || "audio.webm");
     whisperForm.append("model", "whisper-1");
+
+    // temperature=0 → deterministic output, fewer hallucinations on silence
+    whisperForm.append("temperature", "0");
+
+    // Optional prompt anchors Whisper context (improves accuracy)
+    const prompt = (formData.get("prompt")?.toString() ?? "").trim();
+    if (prompt) {
+      whisperForm.append("prompt", prompt.slice(0, 200));
+    }
 
     // Language hint helps Whisper, but it auto-detects mixed RU/EN well.
     // For Sufler we send "" to let Whisper decide (it handles code-switching).
@@ -71,8 +71,6 @@ export async function POST(req: NextRequest) {
       whisperForm.append("language", language.toLowerCase());
     }
 
-    // response_format=json gives us {"text": "..."}
-    // verbose_json adds duration + segments (useful for word-level later)
     whisperForm.append("response_format", "json");
 
     const whisperResponse = await fetch(

@@ -1,14 +1,14 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════════╗
  * ║ 📄  features/translator/Pane.tsx                                   ║
- * ║ 🏷️  version:  2.5.2                                                ║
+ * ║ 🏷️  version:  2.6.0                                                ║
  * ║ 📅  changed:  2026-04-25                                           ║
  * ║ 👥  author:   Solar Team · Leanid + Claude                         ║
  * ║                                                                    ║
  * ║ 🔄 CHANGELOG                                                       ║
+ * ║   v2.6.0 — Whisper STT integration via usePane (no Web Speech)     ║
+ * ║          — improved aria-label/title for record state              ║
  * ║   v2.5.2 — REMOVED mic mutex — Pane mic always works               ║
- * ║          — flowActive prop kept for backwards compat (ignored)     ║
- * ║          — Sufler and Pane mic coexist (browser allows multi-MR)   ║
  * ║   v2.3.1 — added flowActive prop (mic mutex with Sufler) — REMOVED ║
  * ║   v2.2   — Share button + copy feedback                             ║
  * ║   v2.1   — initial Pane                                             ║
