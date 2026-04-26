@@ -1,98 +1,71 @@
-# 🎯 Dashka v2.7.1 — Brain Polish (Grammar Rules)
+# 🎯 Dashka v3.0 — Stabilization (Flow → Bottom Module)
 
-> **Rule-based grammar polish** — последний штрих перед AI brain.
+> **Architectural decision (Dashka):**  
+> Pane = инструмент (top, stable)  
+> Flow = наблюдатель (bottom, optional)
 
-## 🧠 Что добавлено
-
-```
-v2.7.0:  basic reconstruction
-v2.7.1:  + grammarPolish() — fix natural-speech issues
-```
-
-## 🔧 Новые правила (12)
-
-### Chain verbs
-```
-"I wanted to ask discuss"  →  "I wanted to discuss"
-"I want to ask discuss"     →  "I want to discuss"
-"I wanted to ask tell"      →  "I wanted to tell"
-"I wanted to ask see"       →  "I wanted to see"
-```
-
-### Article fixes
-```
-"discuss access"     →  "discuss the access"
-"discuss account"    →  "discuss the account"
-"discuss project"    →  "discuss the project"
-"discuss contract"   →  "discuss the contract"
-"discuss meeting"    →  "discuss the meeting"
-"discuss report"     →  "discuss the report"
-"about access"       →  "about the access"
-"about account"      →  "about the account"
-"about project"      →  "about the project"
-```
-
-### Punctuation polish
-```
-"hello how are you"   →  "Hello, how are you"
-"hi how are you"      →  "Hi, how are you"
-"thank you bye"       →  "Thank you. Bye"
-"hello thank you"     →  "Hello. Thank you"
-```
-
-### Polite chains
-```
-"I would like discuss"  →  "I would like to discuss"
-"I would like ask"      →  "I would like to ask"
-"I would like see"      →  "I would like to see"
-```
-
-## 🧪 Тесты — 9 из 9 ✅
+## 🎯 Что поменялось
 
 ```
-INPUT                                          → OUTPUT
-─────────────────────────────────────────────  ──────────────────────────────────
-"Hello Sabina я хотел спросить                 "Hello Sabina I wanted to discuss
- обсудить доступ спасибо"                       the access thank you."
+ДО (v2.7.1):
+  HEADER:  [Auto] [🎧 Flow] [Theme]
+                       ↑ Flow toggle в шапке (отвлекает)
+  
+  PANES:   ┌─Левый──┬─Правый─┐
+           └────────┴────────┘
+  
+  CleanBar внизу всегда
+  
+  FlowPanel внизу всегда (если Flow ON)
 
-"hello how are you здравствуйте                "Hello, how are you thank you."
- как дела спасибо"
-
-"I хотел бы обсудить проект"                   "I would like to discuss
-                                                the project."
-
-"Здравствуйте. Я хотел спросить                "Hello. I wanted to discuss
- обсудить доступ. Спасибо."                     the access. thank you."
-
-"I want to обсудить the access to              "I want to discuss the access to
- наш account"                                   our account."
-
-"hello hello hello"                            "Hello."
-"hello how are you"                            "Hello, how are you."
-"Hello я зашёл сюда"                           "Hello."
+ПОСЛЕ (v3.0):
+  HEADER:  [Auto] [Theme] [Online]
+           ↑ Flow toggle УДАЛЁН
+  
+  PANES:   ┌─Левый──┬─Правый─┐
+           └────────┴────────┘
+           ↑ STABLE, НЕ ТРОГАЕМ
+  
+  ┌─ 🎧 Streaming ──────── [📚 Learning] [▶ ON] ─┐
+  │                                                │
+  │  CleanBar (если ON)                            │
+  │  FlowPanel (если Learning Mode opt-in)         │
+  └────────────────────────────────────────────────┘
+  ↑ Новый отдельный модуль внизу
 ```
+
+## 📋 Файлы (2)
+
+```
+🟢 app/page.tsx         — UI restructure (Flow → bottom)
+🟢 app/globals.css      — стили для .flow-section
+```
+
+**0 logic changes.** Только UI rearrangement.
 
 ## 🚀 Команды
 
 ```bash
 cd ~/Documents/ITproject/Dashka-chat-sufler/Dashka-chat-sufler-api
 
-unzip -o ~/Downloads/dashka-v271.zip -d /tmp/
+unzip -o ~/Downloads/dashka-v30.zip -d /tmp/
 
-# Один файл!
-cp /tmp/dashka-v271/files/features/translator/cleanEngine.ts  features/translator/cleanEngine.ts
+cp /tmp/dashka-v30/files/app/page.tsx      app/page.tsx
+cp /tmp/dashka-v30/files/app/globals.css   app/globals.css
 
 # Verify
-grep "v2\.7\.1" features/translator/cleanEngine.ts | head -1
-grep "grammarPolish" features/translator/cleanEngine.ts            # >= 2
+grep "v3\.0\.0" app/page.tsx | head -1
+grep "v3\.0\.0" app/globals.css | head -1
+grep "flow-section" app/page.tsx           # >= 5
+grep "flow-section" app/globals.css        # >= 5
 
 # Build
 npx tsc --noEmit && echo "TS OK"
 pnpm run build 2>&1 | tail -5
 
 # Deploy
-git add features/translator/cleanEngine.ts
-git commit -m "feat: v2.7.1 — Brain Polish (grammarPolish rules)"
+git add app/page.tsx app/globals.css
+git commit -m "feat: v3.0 — Stabilization (Flow → bottom module)"
 git push
 vercel --prod
 
@@ -101,69 +74,99 @@ open "https://dashka-chat-sufler.vercel.app"
 
 ## 🧪 После deploy + Cmd+Shift+R
 
-### Тест 1 — главный (Sabina-style)
+### Сценарий 1 — обычный переводчик (Flow OFF)
 ```
-Flow ON
-Скажи: "Hello Sabina я хотел спросить обсудить доступ спасибо"
+HEADER: [Auto] [Theme] [Online]      ← чисто, без Flow toggle
 
-УСЛЫШАНО (RAW):
-   Hello Sabina я хотел спросить обсудить доступ спасибо
+PANES — работают как обычно:
+  Click левый mic → говорю по-русски → перевод EN
+  Click правый mic → говорю по-английски → перевод RU
 
-ГОТОВАЯ ФРАЗА (CLEAN):
-   Hello Sabina I wanted to discuss the access thank you.
-                              ↑ chain verb fix
-                              ↑ article fix
-                              ↑ natural English!
-```
-
-### Тест 2 — politeness (Würde gerne style)
-```
-Flow ON
-Скажи: "Я хотел бы обсудить проект"
-
-ГОТОВАЯ ФРАЗА (CLEAN):
-   I would like to discuss the project.
-                ↑                ↑
-            polite chain    article fix
+Внизу:
+  ┌─ 🎧 Streaming ───────────────── [▶ ON] ─┐
+  │ Включите чтобы постоянно слушать речь  │
+  │ и получать готовые фразы на английском │
+  └─────────────────────────────────────────┘
+  
+  ↑ Свёрнуто, не отвлекает
 ```
 
-### Тест 3 — comma fix
+### Сценарий 2 — включаем Streaming
 ```
-Скажи: "hello how are you"
+Click [▶ ON] во Flow секции
 
-ГОТОВАЯ ФРАЗА:
-   Hello, how are you.
-        ↑ comma fix
+  ┌─ 🎧 Streaming  ● live ───── [📚 Learning] [⏸ OFF] ─┐
+  │                                                     │
+  │ УСЛЫШАНО:    (real-time RAW transcript)            │
+  │ ГОТОВАЯ ФРАЗА: (CLEAN English)                     │
+  │              [🔊 Speak] [📋 Copy]                  │
+  │                                                     │
+  └─────────────────────────────────────────────────────┘
+
+PANES сверху продолжают работать независимо!
 ```
 
-## 🎓 Архитектурные принципы Solar Team
+### Сценарий 3 — Learning mode (opt-in внутри Streaming)
+```
+Streaming ON + Learning ON →
+  + FlowPanel suggestions появляются (учебный режим)
+  
+По умолчанию Learning OFF → нет шума
+```
+
+## 💎 Преимущества нового layout
+
+```
+✅ Pane стабильны, не путаемся "куда жать"
+✅ Flow = опциональная фича (как Дашка задумала)
+✅ Чище выглядит когда Flow OFF
+✅ Toggle переехал из шапки → не отвлекает
+✅ Learning mode вынесен в opt-in (не загромождает UI)
+✅ Готовая база для будущего "Solar Flow" продукта
+```
+
+## 🎯 Solar Team Architectural Principle (v3.0)
 
 ```
 ===============================================================
-  v2.6.1: CLEAN — единый источник истины для всех слоёв UI
-  v2.7.0: CLEAN — sentence reconstruction, не replacement
-  v2.7.1: + grammarPolish — natural speech rules
+  Pane = инструмент (action)
+  Flow = наблюдатель (passive)
+  
+  Они НЕ должны конфликтовать
+  Они НЕ должны мешать друг другу
+  Они РАБОТАЮТ независимо
 ===============================================================
 ```
 
-## 🚀 Что дальше — v2.8 AI Brain (когда нужно)
+## 🚀 Что дальше — Solar Flow Project
+
+После стабилизации v3.0:
 
 ```
-v2.8.0 — Optional LLM polish
-         CLEAN → /api/clean → gpt-4o-mini → final
-         For phrases longer than X chars
-         +1.5sec latency, +$0.001/phrase
-         "Investor-grade" English
+solar-flow/                        ← новый отдельный продукт
+├── docs/
+│   ├── README_SYSTEM.md
+│   ├── ARCHITECTURE.md
+│   ├── PRINCIPLES.md
+│   └── ROADMAP.md
+└── apps/flow-mvp/                 ← новый Next.js app
+    └── один экран:
+        🎧 RECORD
+        УСЛЫШАНО (стрим)
+        ГОТОВАЯ ФРАЗА
+        [Speak] [Copy]
 ```
 
-Но **v2.7.1 уже достаточно** для большинства реальных use-cases.
+Но **сначала** — фиксируем v3.0, проверяем что всё работает в production.
 
 ## ⚪ Что НЕ меняется
 
 - STT (Whisper)
-- Translate API
+- Translate API  
 - TTS (Grok Leo)
-- Sufler architecture
-- Pane UX
+- cleanEngine.ts (Brain v2.7.1)
+- usePane.ts (Whisper STT)
+- useFlow.ts (Sufler logic)
+- All other components
 
-**1 файл.** Architectural polish.
+**Только page.tsx + globals.css.** Чистое UI restructure.
