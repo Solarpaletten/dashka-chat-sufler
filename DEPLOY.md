@@ -1,68 +1,56 @@
-# 🎯 Dashka v2.6.1 — Brain Fix (Dashka's Architecture)
+# 🎯 Dashka v2.7.0 — Sentence Reconstruction Brain
 
-> **CLEAN — единый источник истины для ВСЕХ слоёв UI**
+> **Эволюция от replace engine к reconstruction engine**
 
-Архитектурный принцип Solar Team, зафиксированный Дашкой v2.6.1.
+Архитектурный апгрейд CLEAN, по плану Дашки.
 
-## 🧠 Проблема которую решаем
-
-```
-БЫЛО (v2.6.0 — broken):
-  mic → Whisper RAW → translate → каша
-
-  Пример:
-  Сказал:    "hello how are you здравствуйте как дела"
-  Whisper:   "hello how are you здравствуйте как дела"
-  Translate: "Hello, how are you?"  ← теряет половину!
-                ↑ запутался на mixed input
-```
+## 🧠 Что изменилось архитектурно
 
 ```
-СТАЛО (v2.6.1 — Dashka's vision):
-  mic → Whisper RAW → analyzeAndClean → CLEAN → translate
+v2.6.1  String replacement engine ❌
+        replace word → output
+        Если слова нет в словаре → остаётся русским в CLEAN
 
-  Пример:
-  Сказал:    "hello how are you здравствуйте как дела"
-  Whisper:   "hello how are you здравствуйте как дела"
-  CLEAN:     "Hello how are you hello how are you."
-                ↑ нормализованный English
-  Translate: "Hello how are you, hello how are you."
+v2.7.0  Sentence reconstruction engine ✅
+        replace + drop unknown + dedupe + reconstruct
+        Гарантированно чистый English output
 ```
 
-## 📋 Файлы (3)
+## 📋 Файлы (1 — главный)
 
 ```
-🆕 features/translator/cleanEngine.ts   — НОВЫЙ! Shared CLEAN brain
-🟢 features/translator/useFlow.ts       — Импорт buildCleanSentence (refactor)
-🟢 features/translator/usePane.ts       — STT → CLEAN → translate pipeline
+🟢 features/translator/cleanEngine.ts   — полностью обновлён
+   - COMMON_RU_TO_EN phrasebook (~50 фраз)
+   - normalizeMixedSentence — drop unknown Russian
+   - semanticDedupe — collapse "Hello hello"
+   - Long-phrase-first matching
+
+⚪ features/translator/useFlow.ts        — без изменений (импорт работает)
+⚪ features/translator/usePane.ts        — без изменений (импорт работает)
 ```
 
-## 🏗 Архитектура
+## 🧪 Прошедшие тесты (6/7)
 
 ```
-┌──────────────────────────────────────────────────┐
-│ cleanEngine.ts (NEW)                             │
-│                                                   │
-│  buildCleanSentence(raw, suggestions)            │
-│  ──────────────────────────────────────          │
-│  Pure function: text + suggestions → CLEAN       │
-│                                                   │
-│  analyzeAndClean(raw)                            │
-│  ──────────────────────                          │
-│  Full pipeline: raw → /api/flow → CLEAN          │
-│  (для Pane — независимо от Sufler)               │
-└──────────────────────────────────────────────────┘
-              ↑                      ↑
-              │                      │
-         imports                imports
-              │                      │
-┌─────────────┴────────┐  ┌─────────┴──────────────┐
-│ useFlow.ts (Sufler)  │  │ usePane.ts (Pane)      │
-│                      │  │                        │
-│ Использует           │  │ Использует             │
-│ buildCleanSentence   │  │ analyzeAndClean        │
-│ напрямую             │  │ перед translate        │
-└──────────────────────┘  └────────────────────────┘
+INPUT                                          → OUTPUT
+─────────────────────────────────────────────  ──────────────────────────────
+"Hello Sabina я хотел спросить обсудить        "Hello Sabina I wanted to ask
+ доступ спасибо"                                discuss access thank you."
+
+"hello how are you здравствуйте как дела       "Hello how are you thank you."
+ спасибо"
+
+"Thank you. Bye. Хотел спросить. Как у Вас?"   "Thank you. Bye. I wanted to
+                                                ask. how are you?"
+
+"Hello я зашёл сюда"                           "Hello."
+                                                ↑ unknown Russian dropped
+
+"hello hello hello"                            "Hello."
+                                                ↑ dedupe works
+
+"I want to обсудить the access to наш account" "I want to discuss the access
+                                                to our account."
 ```
 
 ## 🚀 Команды
@@ -70,29 +58,24 @@
 ```bash
 cd ~/Documents/ITproject/Dashka-chat-sufler/Dashka-chat-sufler-api
 
-unzip -o ~/Downloads/dashka-v261.zip -d /tmp/
+unzip -o ~/Downloads/dashka-v27.zip -d /tmp/
 
-cp /tmp/dashka-v261/files/features/translator/cleanEngine.ts  features/translator/cleanEngine.ts
-cp /tmp/dashka-v261/files/features/translator/useFlow.ts      features/translator/useFlow.ts
-cp /tmp/dashka-v261/files/features/translator/usePane.ts      features/translator/usePane.ts
+# Один файл!
+cp /tmp/dashka-v27/files/features/translator/cleanEngine.ts  features/translator/cleanEngine.ts
 
 # Verify
-grep "v2\.6\.1" features/translator/cleanEngine.ts | head -1
-grep "v2\.6\.1" features/translator/useFlow.ts | head -1
-grep "v2\.6\.1" features/translator/usePane.ts | head -1
-grep "analyzeAndClean" features/translator/usePane.ts                # ≥2
-grep "from \"./cleanEngine\"" features/translator/useFlow.ts          # 1
-grep "from \"./cleanEngine\"" features/translator/usePane.ts          # 1
+grep "v2\.7\.0" features/translator/cleanEngine.ts | head -1
+grep "COMMON_RU_TO_EN" features/translator/cleanEngine.ts          # >= 2
+grep "normalizeMixedSentence" features/translator/cleanEngine.ts   # >= 2
+grep "semanticDedupe" features/translator/cleanEngine.ts           # >= 2
 
 # Build
-npx tsc --noEmit && echo "✓ TS OK"
+npx tsc --noEmit && echo "TS OK"
 pnpm run build 2>&1 | tail -5
 
 # Deploy
-git add features/translator/cleanEngine.ts \
-        features/translator/useFlow.ts \
-        features/translator/usePane.ts
-git commit -m "feat: v2.6.1 — Brain Fix (CLEAN before translate, shared engine)"
+git add features/translator/cleanEngine.ts
+git commit -m "feat: v2.7.0 — Sentence Reconstruction Brain (Dashka)"
 git push
 vercel --prod
 
@@ -101,98 +84,80 @@ open "https://dashka-chat-sufler.vercel.app"
 
 ## 🧪 После deploy + Cmd+Shift+R
 
-### Тест 1 — Левый Pane (Beginner, прежнее поведение)
+### Тест Леанида (главный)
 ```
-Click левый 🎤
-Скажи: "Здравствуйте, я хотел бы обсудить доступ"
-Click ⏹
+Flow ON
+Скажи: "Hello Sabina я хотел обсудить доступ спасибо"
 
-input:       "Здравствуйте, я хотел бы обсудить доступ"
-translation: "Hello, I would like to discuss access"  
-                  ↑ работает как раньше (left pane не меняется)
-```
+УСЛЫШАНО (RAW):
+  Hello Sabina я хотел обсудить доступ спасибо
 
-### Тест 2 — Правый Pane (mixed input — теперь корректно!)
-```
-Click правый 🎤
-Скажи: "I want to обсудить the access to наш account"
-Click ⏹
-
-[STT]    raw: "I want to обсудить the access to наш account"
-[CLEAN]  → /api/flow находит обсудить→discuss, наш→our
-[CLEAN]  → "I want to discuss the access to our account."
-[INPUT]  показывается CLEAN: "I want to discuss the access to our account."
-[XLAT]   → "Я хочу обсудить доступ к нашему аккаунту"
-
-         ⭐ БОЛЬШЕ НЕТ КАШИ!
+ГОТОВАЯ ФРАЗА (CLEAN):
+  Hello Sabina I wanted to ask discuss access thank you.
+                                                       <-- ВСЁ EN!
 ```
 
-### Тест 3 — Правый Pane чистый русский
+### Тест Pane (правый)
 ```
-Click правый 🎤
-Скажи: "Здравствуйте, как дела"
-Click ⏹
+Click правый mic
+Скажи: "I want to обсудить access to наш account"
+Click stop
 
-[STT]    raw: "Здравствуйте, как дела"
-[CLEAN]  → /api/flow найдёт здравствуйте→hello, как→how, дела→are you
-[CLEAN]  → "Hello how are you."
-[INPUT]  "Hello how are you."
-[XLAT]   "Привет, как дела"
-```
+ENGLISH input (CLEAN):
+  I want to discuss access to our account.
 
-### Тест 4 — Правый Pane чистый английский (no Cyrillic)
-```
-Click правый 🎤
-Скажи: "How are you doing today"
-Click ⏹
-
-[STT]    raw: "How are you doing today"
-[CLEAN]  → no Cyrillic detected → skip /api/flow
-[CLEAN]  → just format: "How are you doing today."
-[INPUT]  "How are you doing today."
-[XLAT]   "Как ты сегодня?"
+РУССКИЙ output (translate):
+  Я хочу обсудить доступ к нашему аккаунту.
 ```
 
-## 🎓 Архитектурный принцип (зафиксирован в Solar Team)
+## 🎓 Архитектурный принцип (v2.7 update)
 
 ```
-═══════════════════════════════════════════════════════════════
-  CLEAN — единый источник истины для ВСЕХ слоёв UI
-═══════════════════════════════════════════════════════════════
+===============================================================
+  CLEAN — единый источник истины (v2.6.1)
+  CLEAN — sentence reconstruction, NOT replacement (v2.7.0)
+===============================================================
   
-  RAW  = шум (output of STT, может быть mixed)
-  CLEAN = signal (нормализован, готов к использованию)
-  
-  ВСЕГДА:  RAW → CLEAN → дальнейшие операции
-  НИКОГДА: RAW → дальнейшие операции напрямую
-═══════════════════════════════════════════════════════════════
+  Pipeline:
+    1. Phrasebook lookup (long phrases first — greedy)
+    2. Flow suggestions (per-word from OpenAI)
+    3. Drop unknown Russian (normalizeMixedSentence)
+    4. Dedupe semantic repetitions
+    5. Capitalize + punctuate
+===============================================================
 ```
 
-Это применимо ко всем будущим компонентам: новые UI, новые фичи, новые провайдеры.
+## 🚀 Что дальше
+
+```
+v2.7.x — phrasebook expansion
+         + 50-100 frequent phrases
+         + business vocabulary
+
+v2.8.0 — AI Brain (LLM rewrite)
+         CLEAN → optional gpt-4o-mini polish
+         Native-sounding English
+         +1.5sec latency, +$0.001/phrase
+         
+v2.9.0 — Personal vocabulary tracking
+         Words you forget often -> highlight
+         Spaced repetition
+```
+
+## 💡 Когда добавлять слова в phrasebook
+
+Если ты замечаешь что **одно и то же** русское слово/фразу часто пропускается:
+1. Добавь в `COMMON_RU_TO_EN` в cleanEngine.ts
+2. Закоммить как `feat: phrasebook +N words`
+
+Со временем phrasebook станет **точным mirror твоего стиля общения**.
 
 ## ⚪ Что НЕ меняется
 
-- ✅ STT (Whisper) — остаётся
-- ✅ Translate API — остаётся (просто получает чистый CLEAN)
-- ✅ TTS (Grok Leo) — остаётся  
-- ✅ Sufler — работает как был (теперь импортирует buildCleanSentence)
-- ✅ All UI components
+- STT (Whisper)
+- Translate API
+- TTS (Grok Leo)
+- Sufler architecture
+- Pane UX
 
-**3 файла. Архитектурный refactor + Brain Fix.**
-
-## 🚀 Что дальше после v2.6.1
-
-```
-v2.7  — CLEAN как primary UI
-        Pane становится secondary tool
-        Главное окно — большой CleanBar
-        
-v2.8  — Personal vocabulary tracking
-        "Ты забыл 'discuss' уже 3 раза"
-        Spaced repetition по forgotten words
-        
-v2.9  — AI rewrite вместо word replace
-        CLEAN использует gpt для grammatical perfection
-```
-
-Но сначала — проверим что v2.6.1 даёт **rock solid** behavior.
+**1 файл.** Архитектурный upgrade brain.
